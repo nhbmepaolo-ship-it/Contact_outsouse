@@ -47,12 +47,13 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Telegram notification endpoint
+// Telegram notification endpoint (Supports text and photo uploads)
 app.post('/api/telegram/send', async (req, res) => {
   try {
-    const { message, token, chatId, parse_mode = 'Markdown' } = req.body;
+    const { message, token, chatId, photo, image, parse_mode = 'HTML' } = req.body;
     const botToken = (token || DEFAULT_BOT_TOKEN || '').trim();
     const targetChatId = (chatId || DEFAULT_CHAT_ID || '').trim();
+    const photoData = photo || image;
 
     if (!botToken || !targetChatId) {
       return res.status(400).json({
@@ -61,41 +62,142 @@ app.post('/api/telegram/send', async (req, res) => {
       });
     }
 
-    if (!message) {
+    if (!message && !photoData) {
       return res.status(400).json({
         success: false,
-        error: 'Message content is required'
+        error: 'Message content or photo is required'
       });
     }
 
-    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const response = await fetch(telegramUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: targetChatId,
-        text: message,
-        parse_mode: parse_mode,
-        disable_web_page_preview: true
-      })
-    });
+    let sendSuccess = false;
+    let resultData: any = null;
 
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      console.error('Telegram API error:', data);
-      return res.status(response.status || 400).json({
+    // 1. Try sending with photo if photo is provided
+    if (photoData) {
+      try {
+        if (typeof photoData === 'string' && photoData.startsWith('data:image/')) {
+          // Parse data URL
+          const match = photoData.match(/^data:(image\/[a-zA-Z0-9+]+);base64,(.+)$/);
+          const mimeType = match ? match[1] : 'image/jpeg';
+          const base64Str = match ? match[2] : photoData.replace(/^data:image\/\w+;base64,/, '');
+          const buffer = Buffer.from(base64Str, 'base64');
+          const ext = mimeType.includes('png') ? 'png' : 'jpg';
+          const file = new File([buffer], `visitor_card.${ext}`, { type: mimeType });
+
+          const formData = new FormData();
+          formData.append('chat_id', targetChatId);
+          formData.append('photo', file);
+          if (message) {
+            formData.append('caption', message);
+            formData.append('parse_mode', parse_mode);
+          }
+
+          const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+            method: 'POST',
+            body: formData
+          });
+
+          resultData = await photoRes.json();
+          if (photoRes.ok && resultData.ok) {
+            sendSuccess = true;
+          } else {
+            console.warn('sendPhoto with HTML caption failed, retrying plain text caption...', resultData?.description);
+            // Retry photo with plain text caption
+            const plainCaption = message ? message.replace(/<[^>]*>/g, '').replace(/[*_`\[\]()]/g, '') : '';
+            const retryFormData = new FormData();
+            retryFormData.append('chat_id', targetChatId);
+            retryFormData.append('photo', file);
+            if (plainCaption) {
+              retryFormData.append('caption', plainCaption);
+            }
+
+            const retryRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+              method: 'POST',
+              body: retryFormData
+            });
+            const retryData = await retryRes.json();
+            if (retryRes.ok && retryData.ok) {
+              resultData = retryData;
+              sendSuccess = true;
+            }
+          }
+        } else if (typeof photoData === 'string' && (photoData.startsWith('http://') || photoData.startsWith('https://'))) {
+          // Public image URL
+          const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: targetChatId,
+              photo: photoData,
+              caption: message,
+              parse_mode: parse_mode
+            })
+          });
+          resultData = await photoRes.json();
+          if (photoRes.ok && resultData.ok) {
+            sendSuccess = true;
+          }
+        }
+      } catch (photoErr) {
+        console.warn('Error during photo dispatch, will fallback to text message:', photoErr);
+      }
+    }
+
+    // 2. If photo sending didn't happen or failed, send as text message
+    if (!sendSuccess) {
+      const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      let response = await fetch(telegramUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: targetChatId,
+          text: message || 'แจ้งเตือนผู้มาติดต่อ',
+          parse_mode: parse_mode,
+          disable_web_page_preview: true
+        })
+      });
+
+      resultData = await response.json();
+
+      // Fallback: If Telegram rejected due to parsing entities, retry as clean plain text
+      if (!response.ok || !resultData.ok) {
+        console.warn('Telegram primary parse attempt failed, retrying plain text...', resultData.description);
+        const plainText = (message || '').replace(/<[^>]*>/g, '').replace(/[*_`\[\]()]/g, '');
+        response = await fetch(telegramUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chat_id: targetChatId,
+            text: plainText,
+            disable_web_page_preview: true
+          })
+        });
+        resultData = await response.json();
+      }
+
+      if (response.ok && resultData.ok) {
+        sendSuccess = true;
+      }
+    }
+
+    if (!sendSuccess || !resultData?.ok) {
+      console.error('Telegram API error:', resultData);
+      return res.status(400).json({
         success: false,
-        error: data.description || 'Telegram dispatch failed',
-        details: data
+        error: resultData?.description || 'Telegram dispatch failed',
+        details: resultData
       });
     }
 
     return res.json({
       success: true,
-      messageId: data.result?.message_id,
-      data
+      messageId: resultData.result?.message_id,
+      hasPhoto: !!photoData,
+      data: resultData
     });
   } catch (error: any) {
     console.error('Error sending Telegram notification:', error);
@@ -113,11 +215,11 @@ app.post('/api/telegram/test', async (req, res) => {
     const botToken = (token || DEFAULT_BOT_TOKEN || '').trim();
     const targetChatId = (chatId || DEFAULT_CHAT_ID || '').trim();
 
-    const testMessage = `🔔 *ทดสอบการเชื่อมต่อระบบแจ้งเตือน Telegram สำเร็จ!*\n` +
+    const testMessage = `🔔 <b>ทดสอบการเชื่อมต่อระบบแจ้งเตือน Telegram สำเร็จ!</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `🏥 *ระบบ:* ระบบบันทึกและวิเคราะห์ผู้มาติดต่อเครื่องมือแพทย์\n` +
-      `📅 *เวลา:* ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}\n` +
-      `✅ *สถานะ:* บอทพร้อมส่งการแจ้งเตือนแบบเรียลไทม์เมื่อมีผู้มาติดต่อหรือช่างเข้าปฏิบัติงาน`;
+      `🏥 <b>ระบบ:</b> ระบบบันทึกและวิเคราะห์ผู้มาติดต่อเครื่องมือแพทย์\n` +
+      `📅 <b>เวลา:</b> ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}\n` +
+      `✅ <b>สถานะ:</b> บอทพร้อมส่งการแจ้งเตือนแบบเรียลไทม์เมื่อมีผู้มาติดต่อหรือช่างเข้าปฏิบัติงาน`;
 
     const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
     const response = await fetch(telegramUrl, {
@@ -126,7 +228,7 @@ app.post('/api/telegram/test', async (req, res) => {
       body: JSON.stringify({
         chat_id: targetChatId,
         text: testMessage,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       })
     });
 

@@ -281,13 +281,17 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       console.warn('Google Sheets background sync notice:', err);
     });
 
-    // Send Telegram Notification
+    // Send Telegram Notification (with photo if captured)
     if (sendTelegram) {
-      setTelegramStatus('กำลังส่งการแจ้งเตือนไปยัง Telegram...');
+      setTelegramStatus('กำลังส่งการแจ้งเตือนและรูปภาพไปยัง Telegram...');
       const telegramMessage = formatVisitorTelegramMessage(savedRecord);
-      const telResult = await sendTelegramNotification(telegramMessage);
+      const telResult = await sendTelegramNotification(
+        telegramMessage,
+        undefined,
+        savedRecord.cardImageUrl || cardImage || undefined
+      );
       if (telResult.success) {
-        setTelegramStatus('✅ ส่งแจ้งเตือน Telegram เรียบร้อยแล้ว');
+        setTelegramStatus('✅ ส่งการแจ้งเตือนและรูปภาพเข้า Telegram สำเร็จ');
       } else {
         setTelegramStatus(`⚠️ บันทึกสำเร็จ แต่ Telegram แจ้งเตือนไม่สำเร็จ: ${telResult.error || ''}`);
       }
