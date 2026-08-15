@@ -1,4 +1,5 @@
 import { VisitorRecord, DepartmentInfo, EquipmentInfo, CompanyContact } from '../types';
+import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 
 export const INITIAL_DEPARTMENTS: DepartmentInfo[] = [
   { id: 'dept-1', name: 'Physiotherapy', category: 'Rehabilitation', buildingFloor: 'อาคาร 1 ชั้น 2' },
@@ -35,21 +36,21 @@ export const INITIAL_DEPARTMENTS: DepartmentInfo[] = [
 ];
 
 export const INITIAL_EQUIPMENT: EquipmentInfo[] = [
-  { id: 'eq-1', code: 'EQ-01', name: 'AIR COOLING', brand: 'CENTURY', category: 'AIR COOLING', department: 'Air compressor room' },
-  { id: 'eq-2', code: 'EQ-02', name: 'ALARMS, CENTRAL GAS SYSTEM', brand: 'AMICO, BEACON MEDAES, GENTEC, OHIO, SILBERMANN', category: 'ALARMS', department: 'Air compressor room' },
-  { id: 'eq-3', code: 'EQ-03', name: 'AMALGAMATORS', brand: '3M HEALTH CARE, DE GOTZEN S.R.L. LEGNANO, DENTSPLY SIRONA, KERR, SIRONA', category: 'AMALGAMATORS', department: 'Dental & Implant Center' },
-  { id: 'eq-4', code: 'EQ-04', name: 'ANALYZERS, LABORATORY, HEMATOLOGY, COAGULATION', brand: 'ROCHE', category: 'ANALYZERS', department: 'Check Up Center' },
-  { id: 'eq-5', code: 'EQ-05', name: 'ANALYZERS, PHYSIOLOGIC, BODY COMPOSITION', brand: 'INBODY, OMRON', category: 'ANALYZERS', department: 'Check Up Center' },
-  { id: 'eq-6', code: 'EQ-06', name: 'ANALYZERS, PHYSIOLOGIC, DENTAL PULP', brand: 'DIGITEST, KERR, PARKELL', category: 'ANALYZERS', department: 'Dental & Implant Center' },
-  { id: 'eq-7', code: 'EQ-07', name: 'ANALYZERS, PHYSIOLOGIC, FACIAL SKIN CHARACTERISTICS', brand: 'PIE', category: 'ANALYZERS', department: 'Skin' },
-  { id: 'eq-8', code: 'EQ-08', name: 'ANALYZERS, PHYSIOLOGIC, MIDDLE EAR', brand: 'GRASON-STADLER', category: 'ANALYZERS', department: 'Ear Nose Throat Clinic' },
-  { id: 'eq-9', code: 'EQ-09', name: 'ANALYZERS, PHYSIOLOGIC, VISUAL FUNCTION', brand: 'HONEYWELL', category: 'ANALYZERS', department: 'Eye Clinic' },
-  { id: 'eq-10', code: 'EQ-10', name: 'ANALYZERS, PHYSIOLOGIC, VISUAL FUNCTION, EYE STRUCTURE', brand: 'CARL ZEISS MEDITEC AG', category: 'ANALYZERS', department: 'Eye Clinic' },
-  { id: 'eq-11', code: 'EQ-11', name: 'ANALYZERS, POINT-OF-CARE, BREATH, CARBON ISOTOPE', brand: 'OTSUKA ELECTRONICS', category: 'ANALYZERS', department: 'General Medicine' },
-  { id: 'eq-12', code: 'EQ-12', name: 'ANALYZERS, POINT-OF-CARE, BREATH, CARBON MONOXIDE', brand: 'BEDFONT', category: 'ANALYZERS', department: 'General Medicine' },
-  { id: 'eq-13', code: 'EQ-13', name: 'ANALYZERS, POINT-OF-CARE, WHOLE BLOOD, COAGULATION', brand: 'HEMOCHRON', category: 'ANALYZERS', department: 'Emergency & Ambulance' },
-  { id: 'eq-14', code: 'EQ-14', name: 'ANALYZERS, POINT-OF-CARE, WHOLE BLOOD, GAS/PH/ELECTROLYTE', brand: 'ABBOTT LABORATORIES', category: 'ANALYZERS', department: 'Intensive Care Unit' },
-  { id: 'eq-15', code: 'EQ-15', name: 'ANESTHESIA UNITS', brand: 'DATEX OHMEDA', category: 'ANESTHESIA UNITS', department: 'Anesthesia' },
+  { id: 'eq-1', code: 'EQ-01', name: 'AIR COOLING', nameTh: 'ระบบทำความเย็นและระบายความร้อนหัวจ่ายลม', brand: 'CENTURY', category: 'AIR COOLING', department: 'Air compressor room' },
+  { id: 'eq-2', code: 'EQ-02', name: 'ALARMS, CENTRAL GAS SYSTEM', nameTh: 'ระบบสัญญาณเตือนก๊าซทางการแพทย์ส่วนกลาง', brand: 'AMICO, BEACON MEDAES, GENTEC, OHIO, SILBERMANN', category: 'ALARMS', department: 'Air compressor room' },
+  { id: 'eq-3', code: 'EQ-03', name: 'AMALGAMATORS', nameTh: 'เครื่องผสมสารอุดฟัน (อมัลกัม)', brand: '3M HEALTH CARE, DE GOTZEN S.R.L. LEGNANO, DENTSPLY SIRONA, KERR, SIRONA', category: 'AMALGAMATORS', department: 'Dental & Implant Center' },
+  { id: 'eq-4', code: 'EQ-04', name: 'ANALYZERS, LABORATORY, HEMATOLOGY, COAGULATION', nameTh: 'เครื่องตรวจวิเคราะห์การแข็งตัวของเลือดและโลหิตวิทยา', brand: 'ROCHE', category: 'ANALYZERS', department: 'Check Up Center' },
+  { id: 'eq-5', code: 'EQ-05', name: 'ANALYZERS, PHYSIOLOGIC, BODY COMPOSITION', nameTh: 'เครื่องตรวจวิเคราะห์องค์ประกอบร่างกายและมวลไขมัน', brand: 'INBODY, OMRON', category: 'ANALYZERS', department: 'Check Up Center' },
+  { id: 'eq-6', code: 'EQ-06', name: 'ANALYZERS, PHYSIOLOGIC, DENTAL PULP', nameTh: 'เครื่องตรวจวัดความมีชีวิตของโพรงประสาทฟัน', brand: 'DIGITEST, KERR, PARKELL', category: 'ANALYZERS', department: 'Dental & Implant Center' },
+  { id: 'eq-7', code: 'EQ-07', name: 'ANALYZERS, PHYSIOLOGIC, FACIAL SKIN CHARACTERISTICS', nameTh: 'เครื่องตรวจวิเคราะห์สภาพผิวหน้าและเม็ดสีผิว', brand: 'PIE', category: 'ANALYZERS', department: 'Skin' },
+  { id: 'eq-8', code: 'EQ-08', name: 'ANALYZERS, PHYSIOLOGIC, MIDDLE EAR', nameTh: 'เครื่องตรวจการทำงานของหูชั้นกลางและความดันเยื่อแก้วหู (Tympanometer)', brand: 'GRASON-STADLER', category: 'ANALYZERS', department: 'Ear Nose Throat Clinic' },
+  { id: 'eq-9', code: 'EQ-09', name: 'ANALYZERS, PHYSIOLOGIC, VISUAL FUNCTION', nameTh: 'เครื่องตรวจวิเคราะห์สมรรถภาพการมองเห็นและลานสายตา', brand: 'HONEYWELL', category: 'ANALYZERS', department: 'Eye Clinic' },
+  { id: 'eq-10', code: 'EQ-10', name: 'ANALYZERS, PHYSIOLOGIC, VISUAL FUNCTION, EYE STRUCTURE', nameTh: 'เครื่องตรวจวิเคราะห์โครงสร้างลูกตาและขั้วประสาทตา (OCT)', brand: 'CARL ZEISS MEDITEC AG', category: 'ANALYZERS', department: 'Eye Clinic' },
+  { id: 'eq-11', code: 'EQ-11', name: 'ANALYZERS, POINT-OF-CARE, BREATH, CARBON ISOTOPE', nameTh: 'เครื่องตรวจวิเคราะห์ก๊าซในลมหายใจหาเชื้อ H. Pylori (คาร์บอนไอโซโทป)', brand: 'OTSUKA ELECTRONICS', category: 'ANALYZERS', department: 'General Medicine' },
+  { id: 'eq-12', code: 'EQ-12', name: 'ANALYZERS, POINT-OF-CARE, BREATH, CARBON MONOXIDE', nameTh: 'เครื่องตรวจวัดก๊าซคาร์บอนมอนอกไซด์ในลมหายใจ', brand: 'BEDFONT', category: 'ANALYZERS', department: 'General Medicine' },
+  { id: 'eq-13', code: 'EQ-13', name: 'ANALYZERS, POINT-OF-CARE, WHOLE BLOOD, COAGULATION', nameTh: 'เครื่องตรวจวิเคราะห์การแข็งตัวของเลือดข้างเตียงผู้ป่วย', brand: 'HEMOCHRON', category: 'ANALYZERS', department: 'Emergency & Ambulance' },
+  { id: 'eq-14', code: 'EQ-14', name: 'ANALYZERS, POINT-OF-CARE, WHOLE BLOOD, GAS/PH/ELECTROLYTE', nameTh: 'เครื่องตรวจวิเคราะห์ก๊าซในเลือด อิเล็กโทรไลต์ และสมดุลกรด-ด่าง', brand: 'ABBOTT LABORATORIES', category: 'ANALYZERS', department: 'Intensive Care Unit' },
+  { id: 'eq-15', code: 'EQ-15', name: 'ANESTHESIA UNITS', nameTh: 'เครื่องดมยาสลบพร้อมระบบช่วยหายใจ', brand: 'DATEX OHMEDA', category: 'ANESTHESIA UNITS', department: 'Anesthesia' },
 ];
 
 // Raw historical visitor logs parsed from user prompt dataset

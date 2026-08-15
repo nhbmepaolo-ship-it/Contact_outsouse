@@ -17,7 +17,11 @@ import {
   Bike,
   Sparkles,
   Printer,
-  QrCode
+  QrCode,
+  Search,
+  ChevronDown,
+  Check,
+  Languages
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -28,6 +32,7 @@ import {
   EquipmentInfo
 } from '../types';
 import { StorageService } from '../services/storageService';
+import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 import { sendTelegramNotification, formatVisitorTelegramMessage } from '../services/telegramService';
 import { GoogleSheetsService } from '../services/googleSheetsService';
 
@@ -47,6 +52,9 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   // Form State
   const [name, setName] = useState('');
   const [company, setCompany] = useState('');
+  const [companySearch, setCompanySearch] = useState('');
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+  const [sheetCompanies, setSheetCompanies] = useState<string[]>([]);
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<ContactRole>('ช่าง');
   const [department, setDepartment] = useState(departments[0]?.name || 'Physiotherapy');
@@ -60,6 +68,30 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [cardImage, setCardImage] = useState<string>('');
   const [sendTelegram, setSendTelegram] = useState<boolean>(true);
   const [notes, setNotes] = useState('');
+
+  const companyDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load Sheet Companies (Data_base Column A)
+  useEffect(() => {
+    const list = StorageService.getSheetCompanies();
+    setSheetCompanies(list);
+  }, []);
+
+  // Close company dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target as Node)) {
+        setIsCompanyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter companies from Data_base Col A based on search query
+  const filteredCompanies = sheetCompanies.filter(comp =>
+    comp.toLowerCase().includes(companySearch.toLowerCase().trim())
+  );
 
   // Keep department selected in sync when departments load
   useEffect(() => {
@@ -468,34 +500,114 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 </div>
               </div>
 
-              {/* Company */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  บริษัท / สังกัด <span className="text-rose-500">*</span>
-                </label>
+              {/* Company (จากชีท Data_base คอลัมน์ A เท่านั้น มีพิมพ์ค้นหา และ Dropdown ให้เลือก) */}
+              <div className="relative" ref={companyDropdownRef}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    บริษัท / สังกัด (จากชีท Data_base คอลัมน์ A) <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded">
+                    ชีท Data_base Col A ({sheetCompanies.length})
+                  </span>
+                </div>
+
                 <div className="relative">
                   <input
                     id="visitor-company-input"
                     type="text"
                     required
                     value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder="เช่น Philips, Olympus, Double U Tech, Xovic"
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
+                    onFocus={() => {
+                      setIsCompanyDropdownOpen(true);
+                      setCompanySearch(company);
+                    }}
+                    onChange={(e) => {
+                      setCompany(e.target.value);
+                      setCompanySearch(e.target.value);
+                      setIsCompanyDropdownOpen(true);
+                    }}
+                    placeholder="พิมพ์ค้นหาหรือคลิกเลือกบริษัทจากชีท Data_base..."
+                    className="w-full pl-9 pr-8 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
                   />
                   <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <button
+                    type="button"
+                    onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                    title="เปิด/ปิด รายชื่อบริษัทจากชีท Data_base"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCompanyDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                  </button>
                 </div>
-                {/* Popular company tags */}
+
+                {/* Dropdown Menu (แสดงเฉพาะค่าจากชีท Data_base คอลัมน์ A) */}
+                {isCompanyDropdownOpen && (
+                  <div
+                    id="company-dropdown-menu"
+                    className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150"
+                  >
+                    {/* Header in dropdown */}
+                    <div className="p-2 bg-slate-50 sticky top-0 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                      <div className="flex items-center gap-1.5">
+                        <Search className="w-3.5 h-3.5 text-slate-400" />
+                        <span>ผลการค้นหาบริษัท ({filteredCompanies.length} รายการ)</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400">Data_base คอลัมน์ A</span>
+                    </div>
+
+                    {filteredCompanies.length > 0 ? (
+                      filteredCompanies.map((comp, idx) => {
+                        const isSelected = company.toLowerCase() === comp.toLowerCase();
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setCompany(comp);
+                              setCompanySearch(comp);
+                              setIsCompanyDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-50 text-blue-700 font-semibold'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="truncate">{comp}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 text-center text-xs text-slate-500">
+                        <p>ไม่พบบริษัท "{companySearch}" ในชีท Data_base คอลัมน์ A</p>
+                        <button
+                          type="button"
+                          onClick={() => setIsCompanyDropdownOpen(false)}
+                          className="mt-1.5 text-[11px] text-blue-600 font-semibold hover:underline"
+                        >
+                          ใช้ชื่อ "{companySearch}" นี้
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Popular company tags from Sheet */}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[10px] text-slate-400 font-medium">เลือกด่วน:</span>
-                  {POPULAR_COMPANIES.slice(0, 5).map((comp, idx) => (
+                  <span className="text-[10px] text-slate-400 font-medium">เลือกด่วน (Col A):</span>
+                  {sheetCompanies.slice(0, 4).map((comp, idx) => (
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => setCompany(comp.split(' ')[0])}
-                      className="text-[10px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                      onClick={() => {
+                        setCompany(comp);
+                        setCompanySearch(comp);
+                        setIsCompanyDropdownOpen(false);
+                      }}
+                      className="text-[10px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 rounded transition-colors cursor-pointer"
                     >
-                      {comp.split(' ')[0]}
+                      {comp}
                     </button>
                   ))}
                 </div>
@@ -532,11 +644,16 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Department */}
+              {/* Department (เอาค่าในชีท Data_base คอลัมน์ B เท่านั้น) */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  แผนกที่เข้ามาติดต่อ (จากชีท Data_base) <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    แผนกที่เข้ามาติดต่อ (จากชีท Data_base คอลัมน์ B) <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded">
+                    Data_base Col B ({departments.length})
+                  </span>
+                </div>
                 <div className="relative">
                   <select
                     id="visitor-department-select"
@@ -602,27 +719,41 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 />
               </div>
 
-              {/* Equipment Multi-select */}
+              {/* Equipment Multi-select with Thai Name (Name_EqupmentTH คอลัมน์ D) */}
               <div className="col-span-1 md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน (จากชีท Data_equpment หรือพิมพ์ระบุ)
-                </label>
-                <div className="flex flex-wrap gap-1.5 mb-2 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
-                  {equipmentList.slice(0, 15).map((eq) => {
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน (ชีท Data_equpment แปลไทยคอลัมน์ D: Name_EqupmentTH)
+                  </label>
+                  <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                    <Languages className="w-3 h-3 text-emerald-600" />
+                    แปลไทยสากล (Col D)
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-2 max-h-44 overflow-y-auto p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  {equipmentList.slice(0, 20).map((eq) => {
                     const isSelected = selectedEquipments.includes(eq.name);
+                    const displayNameTh = eq.nameTh || translateMedicalEquipmentToThai(eq.name, eq.category);
                     return (
                       <button
                         key={eq.id}
                         type="button"
                         onClick={() => handleToggleEquipment(eq.name)}
-                        className={`text-xs px-2.5 py-1 rounded-md border transition-all ${
+                        className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all text-left flex flex-col cursor-pointer ${
                           isSelected
-                            ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-2xs'
+                            ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-xs'
                             : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                         }`}
                       >
-                        {isSelected ? '✓ ' : '+ '}
-                        {eq.name}
+                        <div className="flex items-center gap-1 font-medium">
+                          <span>{isSelected ? '✓ ' : '+ '}</span>
+                          <span>{eq.name}</span>
+                        </div>
+                        {displayNameTh && (
+                          <span className={`text-[10px] font-normal ${isSelected ? 'text-blue-100' : 'text-emerald-700 font-medium'}`}>
+                            {displayNameTh}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

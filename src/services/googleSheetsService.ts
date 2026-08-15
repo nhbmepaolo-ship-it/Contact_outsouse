@@ -1,4 +1,5 @@
 import { VisitorRecord, DepartmentInfo, EquipmentInfo } from '../types';
+import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 
 function parseCsvLine(text: string): string[] {
   const result: string[] = [];
@@ -143,7 +144,7 @@ function doGet(e) {
       result.departments = deptsList;
     }
     
-    // ดึงข้อมูล Data_equpment (คอลัมน์ A: Type_Equpment, คอลัมน์ B: Name_Equpment, คอลัมน์ C: Brand)
+    // ดึงข้อมูล Data_equpment (คอลัมน์ A: Type_Equpment, คอลัมน์ B: Name_Equpment, คอลัมน์ C: Brand, คอลัมน์ D: Name_EqupmentTH)
     var eqSheet = ss.getSheetByName("Data_equpment");
     if (eqSheet) {
       var eqData = eqSheet.getDataRange().getValues();
@@ -153,9 +154,10 @@ function doGet(e) {
         var eqType = eqData[e][0] ? String(eqData[e][0]).trim() : "";
         var eqName = eqData[e][1] ? String(eqData[e][1]).trim() : eqType;
         var eqBrand = eqData[e][2] ? String(eqData[e][2]).trim() : "";
+        var eqNameTh = eqData[e][3] ? String(eqData[e][3]).trim() : "";
         if (eqName && !seenEqs[eqName + "-" + eqBrand]) {
           seenEqs[eqName + "-" + eqBrand] = true;
-          eqsList.push({ name: eqName, category: eqType, brand: eqBrand });
+          eqsList.push({ name: eqName, nameTh: eqNameTh, category: eqType, brand: eqBrand });
         }
       }
       result.equipments = eqsList;
@@ -261,6 +263,7 @@ export class GoogleSheetsService {
   static async fetchMasterDataFromSheet(sheetIdParam?: string, webhookUrlParam?: string): Promise<{
     success: boolean;
     departments?: DepartmentInfo[];
+    companies?: string[];
     equipments?: EquipmentInfo[];
     message: string;
   }> {
@@ -278,25 +281,29 @@ export class GoogleSheetsService {
             const depts: DepartmentInfo[] = (json.data.departments || []).map((d: any, idx: number) => ({
               id: `dept-gs-${idx + 1}`,
               name: d.name,
-              buildingFloor: d.buildingFloor || 'ไม่ระบุ',
+              buildingFloor: d.buildingFloor || '',
               category: 'General',
             }));
+
+            const companies: string[] = (json.data.companies || []).map((c: any) => typeof c === 'string' ? c : (c.name || '')).filter(Boolean);
 
             const eqs: EquipmentInfo[] = (json.data.equipments || []).map((eq: any, idx: number) => ({
               id: `eq-gs-${idx + 1}`,
               code: `EQ-${idx + 1}`,
               name: eq.name,
+              nameTh: eq.nameTh || translateMedicalEquipmentToThai(eq.name, eq.category),
               vendorCompany: eq.vendorCompany || 'ไม่ระบุ',
-              department: eq.department || 'ไม่ระบุ',
-              category: 'Medical Equipment',
+              department: eq.department || '',
+              category: eq.category || 'Medical Equipment',
             }));
 
-            if (depts.length > 0) {
+            if (depts.length > 0 || companies.length > 0) {
               return {
                 success: true,
                 departments: depts,
+                companies: companies,
                 equipments: eqs,
-                message: `ซิงค์ข้อมูลจาก Apps Script สำเร็จ: พบ ${depts.length} แผนก และ ${eqs.length} รายการเครื่องมือแพทย์`,
+                message: `ซิงค์ข้อมูลจาก Apps Script สำเร็จ: พบ ${companies.length} บริษัท, ${depts.length} แผนก และ ${eqs.length} รายการเครื่องมือแพทย์`,
               };
             }
           }
@@ -328,20 +335,31 @@ export class GoogleSheetsService {
 
         const linesBase = textBase.split(/\r?\n/).filter(line => line.trim().length > 0);
         // Parse CSV lines for Data_base
+        // 1. บริษัท: คอลัมน์ A (Company)
+        // 2. แผนก: คอลัมน์ B (Department)
         const parsedDepts: DepartmentInfo[] = [];
+        const parsedCompanies: string[] = [];
         const seenDeptNames = new Set<string>();
+        const seenCompanies = new Set<string>();
+
         for (let i = 1; i < linesBase.length; i++) {
           const cols = parseCsvLine(linesBase[i]);
-          // Check if Col B is Department (as in Company | Department structure) or Col A
-          const deptName = (cols[1] && cols[1].trim()) ? cols[1].trim() : (cols[0] && cols[0].trim() ? cols[0].trim() : '');
-          const companyName = (cols[0] && cols[0].trim() && cols[1]) ? cols[0].trim() : '';
+          const companyColA = cols[0]?.trim() || '';
+          const departmentColB = cols[1]?.trim() || '';
 
-          if (deptName && !seenDeptNames.has(deptName.toLowerCase())) {
-            seenDeptNames.add(deptName.toLowerCase());
+          // บริษัท เอาค่าในชีท Data_base คอลัมน์ A เท่านั้น
+          if (companyColA && !seenCompanies.has(companyColA.toLowerCase())) {
+            seenCompanies.add(companyColA.toLowerCase());
+            parsedCompanies.push(companyColA);
+          }
+
+          // แผนก เอาค่าในชีท Data_base คอลัมน์ B เท่านั้น
+          if (departmentColB && !seenDeptNames.has(departmentColB.toLowerCase())) {
+            seenDeptNames.add(departmentColB.toLowerCase());
             parsedDepts.push({
               id: `dept-sync-${parsedDepts.length + 1}`,
-              name: deptName,
-              buildingFloor: companyName ? `คู่สัญญา: ${companyName}` : '',
+              name: departmentColB,
+              buildingFloor: companyColA ? `คู่สัญญา: ${companyColA}` : '',
               category: 'Hospital Unit',
             });
           }
@@ -355,10 +373,12 @@ export class GoogleSheetsService {
             const seenEqNames = new Set<string>();
             for (let i = 1; i < linesEq.length; i++) {
               const cols = parseCsvLine(linesEq[i]);
-              // Format: Type_Equpment (Col A) | Name_Equpment (Col B) | Brand (Col C)
+              // Format: Type_Equpment (Col A) | Name_Equpment (Col B) | Brand (Col C) | Name_EqupmentTH (Col D)
               const eqType = cols[0]?.trim() || '';
               const eqName = cols[1]?.trim() || cols[0]?.trim() || '';
               const eqBrand = cols[2]?.trim() || '';
+              const eqNameThFromSheet = cols[3]?.trim() || '';
+              const finalNameTh = eqNameThFromSheet || translateMedicalEquipmentToThai(eqName, eqType);
 
               if (eqName && !seenEqNames.has(`${eqType}-${eqName}-${eqBrand}`.toLowerCase())) {
                 seenEqNames.add(`${eqType}-${eqName}-${eqBrand}`.toLowerCase());
@@ -366,6 +386,7 @@ export class GoogleSheetsService {
                   id: `eq-sync-${parsedEqs.length + 1}`,
                   code: `EQ-${parsedEqs.length + 1}`,
                   name: eqName,
+                  nameTh: finalNameTh,
                   brand: eqBrand,
                   category: eqType || 'Medical Equipment',
                   department: '',
@@ -375,12 +396,13 @@ export class GoogleSheetsService {
           }
         }
 
-        if (parsedDepts.length > 0) {
+        if (parsedDepts.length > 0 || parsedCompanies.length > 0) {
           return {
             success: true,
             departments: parsedDepts,
+            companies: parsedCompanies,
             equipments: parsedEqs,
-            message: `ซิงค์ข้อมูลจากชีท Data_base สำเร็จ: พบ ${parsedDepts.length} แผนก และ ${parsedEqs.length} เครื่องมือแพทย์`,
+            message: `ซิงค์ข้อมูลจากชีท Data_base สำเร็จ: พบ ${parsedCompanies.length} บริษัท (คอลัมน์ A), ${parsedDepts.length} แผนก (คอลัมน์ B) และ ${parsedEqs.length} เครื่องมือแพทย์พร้อมคำแปลไทย (คอลัมน์ D)`,
           };
         }
       }

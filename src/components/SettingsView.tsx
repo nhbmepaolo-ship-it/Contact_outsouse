@@ -107,8 +107,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const result = await GoogleSheetsService.fetchMasterDataFromSheet(sheetId, webhookUrl);
 
-      if (result.success && result.departments && result.departments.length > 0) {
-        StorageService.saveDepartments(result.departments);
+      if (result.success && (result.departments?.length || result.companies?.length)) {
+        if (result.departments && result.departments.length > 0) {
+          StorageService.saveDepartments(result.departments);
+        }
+        if (result.companies && result.companies.length > 0) {
+          StorageService.saveSheetCompanies(result.companies);
+        }
         if (result.equipments && result.equipments.length > 0) {
           StorageService.saveEquipment(result.equipments);
         }
@@ -837,12 +842,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1">
               {equipmentList.map((eq) => (
                 <div key={eq.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs flex justify-between items-center">
-                  <div className="truncate">
+                  <div className="truncate pr-2">
                     <span className="font-semibold text-slate-800 block truncate">{eq.name}</span>
-                    <span className="text-[10px] text-slate-500">{eq.vendorCompany}</span>
+                    {eq.nameTh && (
+                      <span className="text-[11px] text-emerald-700 block truncate font-medium">
+                        🇹🇭 {eq.nameTh}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-500">{eq.vendorCompany || eq.brand || eq.category}</span>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 shrink-0 font-medium">
-                    {eq.department?.split(' ')[0] || 'ทั่วไป'}
+                    {eq.category || eq.department?.split(' ')[0] || 'เครื่องมือแพทย์'}
                   </span>
                 </div>
               ))}

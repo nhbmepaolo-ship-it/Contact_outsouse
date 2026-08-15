@@ -11,6 +11,7 @@ import {
   INITIAL_EQUIPMENT,
   buildInitialContacts
 } from '../data/initialData';
+import { INITIAL_COMPANIES_FROM_SHEET } from '../data/sheetCompanies';
 import { applyImageRetentionPolicy } from '../utils/imageRetention';
 import { DEFAULT_TELEGRAM_CONFIG } from './telegramService';
 
@@ -19,6 +20,7 @@ const STORAGE_KEYS = {
   CONTACTS: 'bme_company_contacts_v2',
   DEPARTMENTS: 'bme_departments_v3',
   EQUIPMENTS: 'bme_equipments_v3',
+  SHEET_COMPANIES: 'bme_sheet_companies_v1',
   TELEGRAM: 'bme_telegram_config_v2',
   ADMIN_AUTH: 'bme_admin_authenticated_v2',
 };
@@ -248,6 +250,30 @@ export class StorageService {
 
   static saveDepartments(depts: DepartmentInfo[]): void {
     localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(depts));
+  }
+
+  // ================= SHEET COMPANIES (COLUMN A FROM DATA_BASE) =================
+
+  static getSheetCompanies(): string[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SHEET_COMPANIES);
+      if (!data) {
+        this.saveSheetCompanies(INITIAL_COMPANIES_FROM_SHEET);
+        return INITIAL_COMPANIES_FROM_SHEET;
+      }
+      const parsed: string[] = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+      return INITIAL_COMPANIES_FROM_SHEET;
+    } catch {
+      return INITIAL_COMPANIES_FROM_SHEET;
+    }
+  }
+
+  static saveSheetCompanies(companies: string[]): void {
+    const cleanList = Array.from(new Set(companies.map(c => c.trim()).filter(Boolean)));
+    localStorage.setItem(STORAGE_KEYS.SHEET_COMPANIES, JSON.stringify(cleanList));
   }
 
   static getEquipment(): EquipmentInfo[] {

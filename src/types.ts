@@ -59,6 +59,7 @@ export interface EquipmentInfo {
   id: string;
   code: string;
   name: string;
+  nameTh?: string; // ชื่อภาษาไทยตามหลักสากลวิศวกรรมการแพทย์ (คอลัมน์ D Name_EqupmentTH)
   brand?: string;
   category: string;
   department?: string;
