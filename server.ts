@@ -81,14 +81,15 @@ app.post('/api/telegram/send', async (req, res) => {
           const mimeType = match ? match[1] : 'image/jpeg';
           const base64Str = match ? match[2] : photoData.replace(/^data:image\/\w+;base64,/, '');
           const buffer = Buffer.from(base64Str, 'base64');
+          const uint8 = new Uint8Array(buffer);
+          const blob = new Blob([uint8], { type: mimeType });
           const ext = mimeType.includes('png') ? 'png' : 'jpg';
-          const file = new File([buffer], `visitor_card.${ext}`, { type: mimeType });
 
           const formData = new FormData();
           formData.append('chat_id', targetChatId);
-          formData.append('photo', file);
+          formData.append('photo', blob, `visitor_card.${ext}`);
           if (message) {
-            formData.append('caption', message);
+            formData.append('caption', message.slice(0, 1024));
             formData.append('parse_mode', parse_mode);
           }
 
@@ -103,10 +104,10 @@ app.post('/api/telegram/send', async (req, res) => {
           } else {
             console.warn('sendPhoto with HTML caption failed, retrying plain text caption...', resultData?.description);
             // Retry photo with plain text caption
-            const plainCaption = message ? message.replace(/<[^>]*>/g, '').replace(/[*_`\[\]()]/g, '') : '';
+            const plainCaption = message ? message.replace(/<[^>]*>/g, '').replace(/[*_`\[\]()]/g, '').slice(0, 1024) : '';
             const retryFormData = new FormData();
             retryFormData.append('chat_id', targetChatId);
-            retryFormData.append('photo', file);
+            retryFormData.append('photo', blob, `visitor_card.${ext}`);
             if (plainCaption) {
               retryFormData.append('caption', plainCaption);
             }
