@@ -1,0 +1,657 @@
+import React, { useState, useMemo } from 'react';
+import {
+  Building2,
+  Phone,
+  User,
+  Wrench,
+  Search,
+  Plus,
+  ShieldCheck,
+  Lock,
+  Edit2,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  Layers,
+  Filter,
+  Download,
+  Copy,
+  Check,
+  Tag
+} from 'lucide-react';
+import { CompanyContact, ContactRole, EquipmentInfo } from '../types';
+import { StorageService } from '../services/storageService';
+
+interface CompanyDirectoryViewProps {
+  isAdmin: boolean;
+  onOpenAdminAuth: () => void;
+  equipmentList: EquipmentInfo[];
+}
+
+export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
+  isAdmin,
+  onOpenAdminAuth,
+  equipmentList,
+}) => {
+  const [contacts, setContacts] = useState<CompanyContact[]>(() =>
+    StorageService.getCompanyContacts()
+  );
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<CompanyContact | null>(null);
+  const [formCompany, setFormCompany] = useState('');
+  const [formName, setFormName] = useState('');
+  const [formRole, setFormRole] = useState<ContactRole>('ช่าง');
+  const [formPhone, setFormPhone] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formEquipments, setFormEquipments] = useState<string[]>([]);
+  const [newEquipmentInput, setNewEquipmentInput] = useState('');
+  const [formNotice, setFormNotice] = useState<{ type: 'success' | 'warning'; text: string } | null>(null);
+
+  // Reload contacts from storage
+  const reloadContacts = () => {
+    setContacts(StorageService.getCompanyContacts());
+  };
+
+  // Distinct company list for filter
+  const distinctCompanies = useMemo(() => {
+    const set = new Set<string>();
+    contacts.forEach(c => {
+      if (c.companyName) set.add(c.companyName.trim());
+    });
+    return Array.from(set).sort();
+  }, [contacts]);
+
+  // Filtered contacts
+  const filteredContacts = useMemo(() => {
+    return contacts.filter(c => {
+      const matchSearch =
+        c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.equipmentList?.some(eq => eq.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchRole = roleFilter === 'all' || c.role === roleFilter;
+      const matchCompany = companyFilter === 'all' || c.companyName === companyFilter;
+
+      return matchSearch && matchRole && matchCompany;
+    });
+  }, [contacts, searchTerm, roleFilter, companyFilter]);
+
+  const handleCopyPhone = (phone: string) => {
+    navigator.clipboard.writeText(phone);
+    setCopiedPhone(phone);
+    setTimeout(() => setCopiedPhone(null), 2000);
+  };
+
+  const handleOpenAdd = () => {
+    setEditingContact(null);
+    setFormCompany('');
+    setFormName('');
+    setFormRole('ช่าง');
+    setFormPhone('');
+    setFormEmail('');
+    setFormEquipments([]);
+    setFormNotice(null);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (contact: CompanyContact) => {
+    setEditingContact(contact);
+    setFormCompany(contact.companyName);
+    setFormName(contact.contactName);
+    setFormRole(contact.role);
+    setFormPhone(contact.phone);
+    setFormEmail(contact.email || '');
+    setFormEquipments([...(contact.equipmentList || [])]);
+    setFormNotice(null);
+    setIsModalOpen(true);
+  };
+
+  const handleAddEquipmentTag = (eq: string) => {
+    const clean = eq.trim();
+    if (clean && !formEquipments.includes(clean)) {
+      setFormEquipments(prev => [...prev, clean]);
+      setNewEquipmentInput('');
+    }
+  };
+
+  const handleRemoveEquipmentTag = (eq: string) => {
+    setFormEquipments(prev => prev.filter(e => e !== eq));
+  };
+
+  const handleSaveContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formCompany.trim() || !formName.trim()) {
+      alert('กรุณากรอกชื่อบริษัทและชื่อผู้ติดต่อ');
+      return;
+    }
+
+    const payload = {
+      id: editingContact?.id,
+      companyName: formCompany.trim(),
+      contactName: formName.trim(),
+      role: formRole,
+      phone: formPhone.trim(),
+      email: formEmail.trim() || undefined,
+      equipmentList: formEquipments,
+      departmentsCovered: editingContact?.departmentsCovered || [],
+      visitCount: editingContact?.visitCount || 1,
+      lastVisit: editingContact?.lastVisit || new Date().toLocaleString('th-TH'),
+    };
+
+    const result = StorageService.upsertCompanyContact(payload);
+    reloadContacts();
+
+    if (result.isDuplicateEquipment) {
+      setFormNotice({
+        type: 'warning',
+        text: 'ผู้ติดต่อรายนี้มีข้อมูลในระบบและดูแลเครื่องมือนี้อยู่แล้ว (อัปเดตข้อมูลทั่วไปเรียบร้อย ไม่สร้างรายการซ้ำ)',
+      });
+      setTimeout(() => {
+        setIsModalOpen(false);
+      }, 1800);
+    } else {
+      setFormNotice({
+        type: 'success',
+        text: result.message,
+      });
+      setTimeout(() => {
+        setIsModalOpen(false);
+      }, 1200);
+    }
+  };
+
+  const handleDeleteContact = (id: string, name: string) => {
+    if (confirm(`คุณต้องการลบผู้ติดต่อ "${name}" ออกจากสมุดโทรศัพท์หรือไม่?`)) {
+      StorageService.deleteCompanyContact(id);
+      reloadContacts();
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['บริษัท', 'ชื่อผู้ติดต่อ', 'ตำแหน่ง/บทบาท', 'เบอร์โทร', 'เครื่องมือแพทย์ที่ดูแล', 'แผนกที่ดูแล', 'จำนวนครั้งที่เข้าพบ', 'เข้าพบล่าสุด'];
+    const rows = filteredContacts.map(c => [
+      `"${c.companyName}"`,
+      `"${c.contactName}"`,
+      `"${c.role}"`,
+      `"${c.phone}"`,
+      `"${(c.equipmentList || []).join('; ')}"`,
+      `"${(c.departmentsCovered || []).join('; ')}"`,
+      c.visitCount || 1,
+      `"${c.lastVisit || '-'}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `BME_Company_Contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // If not Admin, show Locked Screen with friendly unlock prompt
+  if (!isAdmin) {
+    return (
+      <div id="company-directory-locked" className="max-w-2xl mx-auto py-12 px-4 text-center">
+        <div className="bg-white rounded-xl p-8 sm:p-10 shadow-sm border border-slate-200">
+          <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 border border-blue-100">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2 tracking-tight">
+            พื้นที่เฉพาะสิทธิ์ Admin
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto mb-6 leading-relaxed">
+            หน้า <b>"สมุดติดต่อบริษัทคู่ค้า & ช่างเครื่องมือแพทย์"</b> กำหนดให้ดูและแก้ไขได้เฉพาะเจ้าหน้าที่ที่มีสิทธิ์ Admin เพื่อความปลอดภัยของข้อมูล
+          </p>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto mb-6 text-xs text-slate-700 text-left space-y-1.5">
+            <div className="font-bold flex items-center gap-1.5 text-blue-700">
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
+              <span>เข้าใช้งานได้ทันที (ไม่ต้องมีบัญชี Google)</span>
+            </div>
+            <p className="text-slate-600">
+              ท่านสามารถปลดล็อกเข้าดูข้อมูลได้ทันทีด้วยรหัสผ่าน Admin สำหรับการใช้งานทั่วไป
+            </p>
+            <p className="font-semibold text-slate-800 pt-1">
+              🔑 รหัสผ่านเริ่มต้น: <code className="bg-white px-2 py-0.5 rounded text-blue-700 border border-blue-300 font-bold font-mono">1234</code>
+            </p>
+          </div>
+
+          <button
+            id="unlock-admin-for-contacts-btn"
+            onClick={onOpenAdminAuth}
+            className="py-2.5 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-all inline-flex items-center gap-2 cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>กรอกรหัส PIN เพื่อปลดล็อก Admin</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin View
+  return (
+    <div id="company-directory-view" className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      {/* Header & Title */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+              สมุดติดต่อบริษัทคู่ค้า & ช่างเครื่องมือแพทย์
+            </h1>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Admin Access</span>
+            </span>
+          </div>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
+            ฐานข้อมูลรวมตัวแทน ช่าง และสเปเชียลลิสต์ พร้อมรายการเครื่องมือแพทย์ที่ดูแล (จัดกลุ่มเครื่องมือหลายรายการอัตโนมัติ ไม่บันทึกซ้ำ)
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            id="export-contacts-csv-btn"
+            onClick={handleExportCSV}
+            className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-slate-500" />
+            <span>ส่งออก CSV</span>
+          </button>
+          <button
+            id="add-company-contact-btn"
+            onClick={handleOpenAdd}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>เพิ่มผู้ติดต่อใหม่</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Filter & Search Bar */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {/* Search */}
+          <div className="sm:col-span-2 relative">
+            <input
+              id="search-contacts-input"
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="ค้นหาชื่อ, บริษัท, เบอร์โทร หรือเครื่องมือแพทย์..."
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-xs text-slate-900 transition-all"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          </div>
+
+          {/* Role Filter */}
+          <div>
+            <select
+              id="filter-contact-role-select"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-xs text-slate-900 bg-white transition-all"
+            >
+              <option value="all">ทุกตำแหน่ง / บทบาท</option>
+              <option value="ช่าง">ช่าง / วิศวกรบริการ</option>
+              <option value="ผู้แทน">ผู้แทน (Sales Rep)</option>
+              <option value="สเปเชียลลิสต์/ผู้เชี่ยวชาญ">สเปเชียลลิสต์ (Specialist)</option>
+              <option value="เจ้าหน้าที่ส่งสินค้า">เจ้าหน้าที่ส่งสินค้า</option>
+              <option value="อื่นๆ">อื่นๆ</option>
+            </select>
+          </div>
+
+          {/* Company Filter */}
+          <div>
+            <select
+              id="filter-contact-company-select"
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-xs text-slate-900 bg-white transition-all"
+            >
+              <option value="all">ทุกบริษัทคู่ค้า ({distinctCompanies.length})</option>
+              {distinctCompanies.map((c, i) => (
+                <option key={i} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Count Summary */}
+        <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+          <span>
+            แสดงผล <b>{filteredContacts.length}</b> จากทั้งหมด <b>{contacts.length}</b> ผู้ติดต่อ
+          </span>
+          {(searchTerm || roleFilter !== 'all' || companyFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setRoleFilter('all');
+                setCompanyFilter('all');
+              }}
+              className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+            >
+              ล้างตัวกรองทั้งหมด
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Contact Cards Grid */}
+      {filteredContacts.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center border border-slate-200 shadow-sm">
+          <Building2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-slate-700">ไม่พบข้อมูลผู้ติดต่อที่ตรงกับเงื่อนไข</h3>
+          <p className="text-xs text-slate-500 mt-1">ลองเปลี่ยนคำค้นหาหรือตัวกรองบริษัท</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredContacts.map((c) => {
+            const roleBadgeColor =
+              c.role === 'ผู้แทน'
+                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : c.role === 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ'
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : c.role === 'เจ้าหน้าที่ส่งสินค้า'
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+
+            return (
+              <div
+                key={c.id}
+                className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm hover:shadow transition-all flex flex-col justify-between"
+              >
+                <div>
+                  {/* Company & Role Header */}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm leading-snug">
+                          {c.companyName}
+                        </h3>
+                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded border font-semibold mt-0.5 ${roleBadgeColor}`}>
+                          {c.role}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(c)}
+                        className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                        title="แก้ไขข้อมูล"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteContact(c.id, c.contactName)}
+                        className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                        title="ลบผู้ติดต่อ"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Contact Name & Phone */}
+                  <div className="bg-slate-50 rounded-lg p-3 my-3 space-y-2 border border-slate-200">
+                    <div className="flex items-center gap-2 text-xs text-slate-800 font-semibold">
+                      <User className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{c.contactName}</span>
+                    </div>
+
+                    {c.phone && c.phone !== '-' && (
+                      <div className="flex items-center justify-between text-xs">
+                        <a
+                          href={`tel:${c.phone}`}
+                          className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium font-mono hover:underline"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>{c.phone}</span>
+                        </a>
+                        <button
+                          onClick={() => handleCopyPhone(c.phone)}
+                          className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors text-[11px] flex items-center gap-1 cursor-pointer"
+                          title="คัดลอกเบอร์โทร"
+                        >
+                          {copiedPhone === c.phone ? (
+                            <Check className="w-3 h-3 text-blue-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Equipment Managed (Aggregated Tags) */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 block">
+                      เครื่องมือแพทย์ที่ดูแล ({c.equipmentList?.length || 0} รายการ):
+                    </span>
+                    {c.equipmentList && c.equipmentList.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {c.equipmentList.map((eq, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200 font-medium"
+                          >
+                            <Tag className="w-2.5 h-2.5 text-blue-600" />
+                            <span>{eq}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic">ไม่ได้ระบุเครื่องมือเฉพาะ</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer: Visit Stats & Departments */}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>
+                    เข้าพบ: <b className="font-mono text-slate-900">{c.visitCount || 1}</b> ครั้ง
+                  </span>
+                  <span className="truncate max-w-[140px] font-mono" title={c.lastVisit || '-'}>
+                    ล่าสุด: {c.lastVisit?.split(',')[0] || '-'}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add / Edit Contact Modal */}
+      {isModalOpen && (
+        <div id="contact-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-1 tracking-tight">
+              {editingContact ? 'แก้ไขข้อมูลผู้ติดต่อบริษัท' : 'เพิ่มผู้ติดต่อบริษัทคู่ค้า & ช่าง'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              หากผู้ติดต่อดูแลเครื่องมือหลายชิ้น สามารถเพิ่มรายการเครื่องมือต่อท้ายได้ (ระบบจะไม่สร้างรายการซ้ำ)
+            </p>
+
+            {formNotice && (
+              <div
+                className={`p-3 rounded-lg mb-4 text-xs flex items-center gap-2 ${
+                  formNotice.type === 'success'
+                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}
+              >
+                {formNotice.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                )}
+                <span>{formNotice.text}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveContact} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  ชื่อบริษัท / ตัวแทนจำหน่าย <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formCompany}
+                  onChange={(e) => setFormCompany(e.target.value)}
+                  placeholder="เช่น Olympus, Philips, Xovic..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    ชื่อ-นามสกุล ผู้ติดต่อ <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    placeholder="เช่น สมศักดิ์ ใจดี"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    ตำแหน่ง / บทบาท
+                  </label>
+                  <select
+                    value={formRole}
+                    onChange={(e) => setFormRole(e.target.value as ContactRole)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none bg-white transition-all"
+                  >
+                    <option value="ช่าง">ช่าง / วิศวกรบริการ</option>
+                    <option value="ผู้แทน">ผู้แทน (Sales Rep)</option>
+                    <option value="สเปเชียลลิสต์/ผู้เชี่ยวชาญ">สเปเชียลลิสต์ (Specialist)</option>
+                    <option value="เจ้าหน้าที่ส่งสินค้า">เจ้าหน้าที่ส่งมอบสินค้า</option>
+                    <option value="อื่นๆ">อื่นๆ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  เบอร์โทรศัพท์
+                </label>
+                <input
+                  type="tel"
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
+                  placeholder="เช่น 081-234-5678"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none font-mono transition-all"
+                />
+              </div>
+
+              {/* Equipment Multi-tag Management */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  เครื่องมือแพทย์ที่ดูแล (ระบุได้หลายเครื่องมือ)
+                </label>
+
+                {/* Tag list */}
+                {formEquipments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-lg mb-2">
+                    {formEquipments.map((eq, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs font-medium border border-blue-200"
+                      >
+                        <span>{eq}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEquipmentTag(eq)}
+                          className="text-blue-800 hover:text-red-600 font-bold cursor-pointer ml-1"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add Input */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newEquipmentInput}
+                    onChange={(e) => setNewEquipmentInput(e.target.value)}
+                    placeholder="พิมพ์ชื่อเครื่องมือ เช่น กล้องส่องตรวจ, X-Ray, CathLab..."
+                    className="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none transition-all"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddEquipmentTag(newEquipmentInput);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddEquipmentTag(newEquipmentInput)}
+                    className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    + เพิ่ม
+                  </button>
+                </div>
+
+                {/* Quick equipment suggestions */}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  <span className="text-[10px] text-slate-400 py-0.5">แนะนำ:</span>
+                  {equipmentList.slice(0, 8).map((eq) => (
+                    <button
+                      key={eq.id}
+                      type="button"
+                      onClick={() => handleAddEquipmentTag(eq.name)}
+                      className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 border border-slate-200 cursor-pointer"
+                    >
+                      + {eq.name.split(' ')[0]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-2.5 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  {editingContact ? 'บันทึกการแก้ไข' : 'บันทึกผู้ติดต่อ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
