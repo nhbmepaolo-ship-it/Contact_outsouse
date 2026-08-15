@@ -242,7 +242,13 @@ export class StorageService {
         this.saveDepartments(INITIAL_DEPARTMENTS);
         return INITIAL_DEPARTMENTS;
       }
-      return JSON.parse(data);
+      const parsed: DepartmentInfo[] = JSON.parse(data);
+      // Clean any legacy "คู่สัญญา" strings
+      const cleaned = parsed.map(d => ({
+        ...d,
+        buildingFloor: (d.buildingFloor && d.buildingFloor.includes('คู่สัญญา')) ? '' : d.buildingFloor
+      }));
+      return cleaned;
     } catch {
       return INITIAL_DEPARTMENTS;
     }

@@ -347,19 +347,19 @@ export class GoogleSheetsService {
           const companyColA = cols[0]?.trim() || '';
           const departmentColB = cols[1]?.trim() || '';
 
-          // บริษัท เอาค่าในชีท Data_base คอลัมน์ A เท่านั้น
+          // บริษัท เอาค่าในชีท Data_base คอลัมน์ A (Company) เท่านั้น
           if (companyColA && !seenCompanies.has(companyColA.toLowerCase())) {
             seenCompanies.add(companyColA.toLowerCase());
             parsedCompanies.push(companyColA);
           }
 
-          // แผนก เอาค่าในชีท Data_base คอลัมน์ B เท่านั้น
+          // แผนก เอาค่าในชีท Data_base คอลัมน์ B (Department) เท่านั้น
           if (departmentColB && !seenDeptNames.has(departmentColB.toLowerCase())) {
             seenDeptNames.add(departmentColB.toLowerCase());
             parsedDepts.push({
               id: `dept-sync-${parsedDepts.length + 1}`,
               name: departmentColB,
-              buildingFloor: companyColA ? `คู่สัญญา: ${companyColA}` : '',
+              buildingFloor: '',
               category: 'Hospital Unit',
             });
           }

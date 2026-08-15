@@ -500,16 +500,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 </div>
               </div>
 
-              {/* Company (จากชีท Data_base คอลัมน์ A เท่านั้น มีพิมพ์ค้นหา และ Dropdown ให้เลือก) */}
+              {/* Company */}
               <div className="relative" ref={companyDropdownRef}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    บริษัท / สังกัด (จากชีท Data_base คอลัมน์ A) <span className="text-rose-500">*</span>
-                  </label>
-                  <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded">
-                    ชีท Data_base Col A ({sheetCompanies.length})
-                  </span>
-                </div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  บริษัท / สังกัด <span className="text-rose-500">*</span>
+                </label>
 
                 <div className="relative">
                   <input
@@ -526,7 +521,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       setCompanySearch(e.target.value);
                       setIsCompanyDropdownOpen(true);
                     }}
-                    placeholder="พิมพ์ค้นหาหรือคลิกเลือกบริษัทจากชีท Data_base..."
+                    placeholder="พิมพ์ค้นหาหรือเลือกบริษัท..."
                     className="w-full pl-9 pr-8 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
                   />
                   <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -534,13 +529,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                     type="button"
                     onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
                     className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                    title="เปิด/ปิด รายชื่อบริษัทจากชีท Data_base"
+                    title="เปิด/ปิด รายชื่อบริษัท"
                   >
                     <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCompanyDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
                   </button>
                 </div>
 
-                {/* Dropdown Menu (แสดงเฉพาะค่าจากชีท Data_base คอลัมน์ A) */}
+                {/* Dropdown Menu */}
                 {isCompanyDropdownOpen && (
                   <div
                     id="company-dropdown-menu"
@@ -550,9 +545,8 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                     <div className="p-2 bg-slate-50 sticky top-0 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
                       <div className="flex items-center gap-1.5">
                         <Search className="w-3.5 h-3.5 text-slate-400" />
-                        <span>ผลการค้นหาบริษัท ({filteredCompanies.length} รายการ)</span>
+                        <span>รายชื่อบริษัท ({filteredCompanies.length})</span>
                       </div>
-                      <span className="text-[10px] text-slate-400">Data_base คอลัมน์ A</span>
                     </div>
 
                     {filteredCompanies.length > 0 ? (
@@ -580,7 +574,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       })
                     ) : (
                       <div className="p-3 text-center text-xs text-slate-500">
-                        <p>ไม่พบบริษัท "{companySearch}" ในชีท Data_base คอลัมน์ A</p>
+                        <p>ไม่พบบริษัท "{companySearch}"</p>
                         <button
                           type="button"
                           onClick={() => setIsCompanyDropdownOpen(false)}
@@ -593,9 +587,9 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                   </div>
                 )}
 
-                {/* Popular company tags from Sheet */}
+                {/* Popular company tags */}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[10px] text-slate-400 font-medium">เลือกด่วน (Col A):</span>
+                  <span className="text-[10px] text-slate-400 font-medium">เลือกด่วน:</span>
                   {sheetCompanies.slice(0, 4).map((comp, idx) => (
                     <button
                       key={idx}
@@ -644,16 +638,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Department (เอาค่าในชีท Data_base คอลัมน์ B เท่านั้น) */}
+              {/* Department */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    แผนกที่เข้ามาติดต่อ (จากชีท Data_base คอลัมน์ B) <span className="text-rose-500">*</span>
-                  </label>
-                  <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded">
-                    Data_base Col B ({departments.length})
-                  </span>
-                </div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  แผนกที่เข้ามาติดต่อ <span className="text-rose-500">*</span>
+                </label>
                 <div className="relative">
                   <select
                     id="visitor-department-select"
@@ -663,7 +652,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                   >
                     {departments.map((dept) => (
                       <option key={dept.id} value={dept.name}>
-                        {dept.name} {dept.buildingFloor ? `(${dept.buildingFloor})` : ''}
+                        {dept.name}
                       </option>
                     ))}
                   </select>
@@ -719,17 +708,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 />
               </div>
 
-              {/* Equipment Multi-select with Thai Name (Name_EqupmentTH คอลัมน์ D) */}
+              {/* Equipment Multi-select with Thai Name */}
               <div className="col-span-1 md:col-span-2">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน (ชีท Data_equpment แปลไทยคอลัมน์ D: Name_EqupmentTH)
-                  </label>
-                  <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1">
-                    <Languages className="w-3 h-3 text-emerald-600" />
-                    แปลไทยสากล (Col D)
-                  </span>
-                </div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน
+                </label>
                 <div className="flex flex-wrap gap-1.5 mb-2 max-h-44 overflow-y-auto p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                   {equipmentList.slice(0, 20).map((eq) => {
                     const isSelected = selectedEquipments.includes(eq.name);
