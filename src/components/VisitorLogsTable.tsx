@@ -15,7 +15,8 @@ import {
   X,
   ExternalLink,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { VisitorRecord } from '../types';
 import { getDaysRemaining } from '../utils/imageRetention';
@@ -24,11 +25,15 @@ import { sendTelegramNotification, formatVisitorTelegramMessage } from '../servi
 interface VisitorLogsTableProps {
   records: VisitorRecord[];
   onDeleteRecord: (id: string) => void;
+  isAdmin: boolean;
+  onOpenAdminAuth: () => void;
 }
 
 export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
   records,
   onDeleteRecord,
+  isAdmin,
+  onOpenAdminAuth,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [workTypeFilter, setWorkTypeFilter] = useState('all');
@@ -122,6 +127,43 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  // If not admin, protect visitor logs with admin lock screen
+  if (!isAdmin) {
+    return (
+      <div id="visitor-logs-locked-view" className="max-w-2xl mx-auto py-12 px-4">
+        <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 text-center">
+          <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200 shadow-2xs">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+            สงวนสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Only)
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto mb-6">
+            หน้าประวัติการเข้าปฏิบัติงาน, ทะเบียนรถ, รูปถ่ายบัตร และการส่งออกข้อมูล เป็นข้อมูลส่วนบุคคล (PDPA) ที่อนุญาตให้เฉพาะเจ้าหน้าที่ฝ่ายเครื่องมือแพทย์เข้าดูเท่านั้น
+          </p>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto mb-6 text-xs text-slate-700 text-left space-y-1.5">
+            <div className="font-bold flex items-center gap-1.5 text-blue-700">
+              <ShieldAlert className="w-4 h-4 text-blue-600" />
+              <span>การคุ้มครองข้อมูลส่วนบุคคล (PDPA)</span>
+            </div>
+            <p className="text-slate-600">
+              บุคคลทั่วไปสามารถลงทะเบียนเข้าปฏิบัติงานและดูแดชบอร์ดสรุปภาพรวมได้ กรุณายืนยันตัวตนด้วยรหัสผ่านผู้ดูแลระบบเพื่อเข้าถึงประวัติโดยละเอียด
+            </p>
+          </div>
+
+          <button
+            onClick={onOpenAdminAuth}
+            className="py-2.5 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-all inline-flex items-center gap-2 cursor-pointer"
+          >
+            <Lock className="w-4 h-4" />
+            <span>เข้าสู่ระบบด้วยรหัสผ่าน Admin</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="visitor-logs-table-view" className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6">

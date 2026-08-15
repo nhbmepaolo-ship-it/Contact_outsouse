@@ -77,7 +77,13 @@ export default function App() {
             departments={departments}
             equipmentList={equipmentList}
             onRecordAdded={handleRecordAdded}
-            onViewLogs={() => setActiveTab('logs')}
+            onViewLogs={() => {
+              if (isAdmin) {
+                setActiveTab('logs');
+              } else {
+                setIsAdminModalOpen(true);
+              }
+            }}
           />
         )}
 
@@ -89,6 +95,8 @@ export default function App() {
           <VisitorLogsTable
             records={records}
             onDeleteRecord={handleDeleteRecord}
+            isAdmin={isAdmin}
+            onOpenAdminAuth={() => setIsAdminModalOpen(true)}
           />
         )}
 

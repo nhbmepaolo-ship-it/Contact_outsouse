@@ -20,9 +20,8 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Default PIN is 1234 or admin or 0000 for effortless access without Google account
     const cleanPin = pin.trim();
-    if (cleanPin === '1234' || cleanPin.toLowerCase() === 'admin' || cleanPin === '0000') {
+    if (cleanPin === 'BME@PTP') {
       setError('');
       try {
         confetti({
@@ -34,7 +33,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       onSuccess();
       onClose();
     } else {
-      setError('รหัส PIN ไม่ถูกต้อง (รหัสเริ่มต้นคือ 1234)');
+      setError('รหัสผ่าน Admin ไม่ถูกต้อง');
     }
   };
 
@@ -58,7 +57,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               เข้าสู่ระบบสิทธิ์ Admin
             </h3>
             <p className="text-xs text-slate-500">
-              สำหรับดูและจัดการสมุดติดต่อบริษัทคู่ค้า & ช่าง
+              สำหรับฝ่ายเครื่องมือแพทย์ (BME) ในการจัดการข้อมูล
             </p>
           </div>
         </div>
@@ -66,20 +65,17 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 mb-5 text-xs text-slate-700 space-y-1">
           <div className="font-semibold flex items-center gap-1.5 text-blue-700">
             <KeyRound className="w-4 h-4 text-blue-600" />
-            <span>การเข้าใช้งานแบบไม่ต้องมีบัญชี Google</span>
+            <span>พื้นที่ควบคุมเฉพาะเจ้าหน้าที่ฝ่ายเครื่องมือแพทย์</span>
           </div>
           <p className="text-slate-600 leading-relaxed">
-            บุคคลทั่วไปสามารถเข้าบันทึกข้อมูลและดูแดชบอร์ดได้ทันที ส่วนหน้า <b>"สมุดติดต่อบริษัท"</b> สงวนเฉพาะสิทธิ์ Admin
-          </p>
-          <p className="font-semibold text-slate-800 pt-1">
-            🔑 รหัสผ่านเริ่มต้นสำหรับทดสอบ: <code className="bg-white px-2 py-0.5 rounded text-blue-700 font-bold border border-blue-200 font-mono">1234</code>
+            บุคคลภายนอกสามารถบันทึกข้อมูลและดูแดชบอร์ดสรุปได้ตามปกติ การเข้าถึงสมุดติดต่อและตั้งค่าระบบจำเป็นต้องยืนยันตัวตนด้วยรหัสผ่านผู้ดูแลระบบ
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              กรอกรหัส PIN หรือรหัสผ่าน Admin
+              กรอกรหัสผ่าน Admin
             </label>
             <div className="relative">
               <input
@@ -90,9 +86,9 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                   setPin(e.target.value);
                   setError('');
                 }}
-                placeholder="กรอกรหัส 1234"
+                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
                 autoFocus
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-slate-900 tracking-wider font-mono text-center text-lg transition-all"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-slate-900 tracking-wider font-mono text-center text-base transition-all"
               />
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
             </div>

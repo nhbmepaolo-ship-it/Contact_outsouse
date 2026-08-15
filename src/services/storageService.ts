@@ -17,8 +17,8 @@ import { DEFAULT_TELEGRAM_CONFIG } from './telegramService';
 const STORAGE_KEYS = {
   VISITORS: 'bme_visitor_records_v2',
   CONTACTS: 'bme_company_contacts_v2',
-  DEPARTMENTS: 'bme_departments_v2',
-  EQUIPMENTS: 'bme_equipments_v2',
+  DEPARTMENTS: 'bme_departments_v3',
+  EQUIPMENTS: 'bme_equipments_v3',
   TELEGRAM: 'bme_telegram_config_v2',
   ADMIN_AUTH: 'bme_admin_authenticated_v2',
 };

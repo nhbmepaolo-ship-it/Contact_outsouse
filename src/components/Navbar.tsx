@@ -83,9 +83,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>แดชบอร์ดสรุปรายงาน</span>
             </button>
 
+            {/* Visitor Logs (Admin Protected) */}
             <button
               id="nav-logs-btn"
-              onClick={() => setActiveTab('logs')}
+              onClick={() => {
+                if (isAdmin) {
+                  setActiveTab('logs');
+                } else {
+                  onOpenAdminAuth();
+                }
+              }}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'logs'
                   ? 'bg-blue-600 text-white shadow-xs'
@@ -94,6 +101,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <ClipboardList className="w-3.5 h-3.5" />
               <span>ประวัติ ({totalVisitorsCount})</span>
+              {isAdmin ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              ) : (
+                <Lock className="w-3 h-3 text-slate-400" />
+              )}
             </button>
 
             {/* Company Contacts (Admin Protected) */}
@@ -121,9 +133,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
+            {/* Settings & Sheets (Admin Protected) */}
             <button
               id="nav-settings-btn"
-              onClick={() => setActiveTab('settings')}
+              onClick={() => {
+                if (isAdmin) {
+                  setActiveTab('settings');
+                } else {
+                  onOpenAdminAuth();
+                }
+              }}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'settings'
                   ? 'bg-blue-600 text-white shadow-xs'
@@ -132,6 +151,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Settings className="w-3.5 h-3.5" />
               <span>ตั้งค่า & ชีท</span>
+              {isAdmin ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              ) : (
+                <Lock className="w-3 h-3 text-slate-400" />
+              )}
             </button>
           </nav>
 
@@ -199,13 +223,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>แดชบอร์ด</span>
           </button>
           <button
-            onClick={() => setActiveTab('logs')}
+            onClick={() => {
+              if (isAdmin) setActiveTab('logs');
+              else onOpenAdminAuth();
+            }}
             className={`flex flex-col items-center py-1 px-2.5 rounded-md text-[11px] font-medium ${
               activeTab === 'logs' ? 'text-blue-600 font-bold bg-blue-50' : 'text-slate-600'
             }`}
           >
             <ClipboardList className="w-4 h-4" />
-            <span>ประวัติ</span>
+            <span>ประวัติ {isAdmin ? '' : '🔒'}</span>
           </button>
           <button
             onClick={() => {
@@ -220,13 +247,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>สมุดติดต่อ {isAdmin ? '' : '🔒'}</span>
           </button>
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={() => {
+              if (isAdmin) setActiveTab('settings');
+              else onOpenAdminAuth();
+            }}
             className={`flex flex-col items-center py-1 px-2.5 rounded-md text-[11px] font-medium ${
               activeTab === 'settings' ? 'text-blue-600 font-bold bg-blue-50' : 'text-slate-600'
             }`}
           >
             <Settings className="w-4 h-4" />
-            <span>ตั้งค่า</span>
+            <span>ตั้งค่า {isAdmin ? '' : '🔒'}</span>
           </button>
         </div>
       </div>

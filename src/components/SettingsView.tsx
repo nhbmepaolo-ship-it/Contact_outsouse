@@ -14,6 +14,7 @@ import {
   Layers,
   Wrench,
   KeyRound,
+  Lock,
   ExternalLink,
   Copy,
   Check,
@@ -104,17 +105,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setSheetSyncResult('กำลังเชื่อมต่อ Google Sheets...');
 
     try {
-      // Fetch Data_base and Data_equpment from API
-      const resBase = await fetch(`/api/sheets/fetch?sheetId=${encodeURIComponent(sheetId)}&sheetName=Data_base`);
-      const resEq = await fetch(`/api/sheets/fetch?sheetId=${encodeURIComponent(sheetId)}&sheetName=Data_equpment`);
+      const result = await GoogleSheetsService.fetchMasterDataFromSheet(sheetId, webhookUrl);
 
-      if (resBase.ok && resEq.ok) {
-        setSheetSyncResult('✅ เชื่อมต่อและซิงค์ข้อมูลจาก Google Sheets ชีท ID สำเร็จ');
+      if (result.success && result.departments && result.departments.length > 0) {
+        StorageService.saveDepartments(result.departments);
+        if (result.equipments && result.equipments.length > 0) {
+          StorageService.saveEquipment(result.equipments);
+        }
+        onRefreshData();
+        setSheetSyncResult(`✅ ${result.message}`);
+        try {
+          confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
+        } catch {}
       } else {
-        setSheetSyncResult('✅ ฐานข้อมูล Master Data (Data_base & Data_equpment) พร้อมใช้งานในระบบ');
+        setSheetSyncResult(result.message || '⚠️ ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบสิทธิ์การแชร์ชีท');
       }
-    } catch {
-      setSheetSyncResult('✅ โหลดข้อมูล Master Data (Data_base & Data_equpment) พร้อมใช้งานเรียบร้อยแล้ว');
+    } catch (e: any) {
+      setSheetSyncResult(`❌ เกิดข้อผิดพลาด: ${e?.message || 'ไม่สามารถดึงข้อมูลได้'}`);
     } finally {
       setIsSyncingSheet(false);
     }
@@ -203,6 +210,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       alert('รีเซ็ตข้อมูลกลับสู่ค่าเริ่มต้นเรียบร้อยแล้ว');
     }
   };
+
+  // If not admin, show dedicated locked screen to protect settings & integrations
+  if (!isAdmin) {
+    return (
+      <div id="settings-locked-view" className="max-w-2xl mx-auto py-12 px-4">
+        <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 text-center">
+          <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200 shadow-2xs">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+            สงวนสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Only)
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto mb-6">
+            หน้าการตั้งค่าระบบ, การเชื่อมต่อ Google Sheets, Webhook และ Telegram Bot อนุญาตให้เฉพาะเจ้าหน้าที่ฝ่ายเครื่องมือแพทย์ (BME) เข้าใช้งานเท่านั้น
+          </p>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto mb-6 text-xs text-slate-700 text-left space-y-1.5">
+            <div className="font-bold flex items-center gap-1.5 text-blue-700">
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
+              <span>การรักษาความปลอดภัยข้อมูลระบบ</span>
+            </div>
+            <p className="text-slate-600">
+              บุคคลภายนอกสามารถลงทะเบียนเข้าปฏิบัติงานและดูแดชบอร์ดสรุปได้ตามปกติ กรุณายืนยันตัวตนด้วยรหัสผ่านผู้ดูแลระบบเพื่อเข้าถึงหน้านี้
+            </p>
+          </div>
+
+          <button
+            onClick={onOpenAdminAuth}
+            className="py-2.5 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-all inline-flex items-center gap-2 cursor-pointer"
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>เข้าสู่ระบบด้วยรหัสผ่าน Admin</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="settings-view" className="max-w-5xl mx-auto py-6 px-4 sm:px-6 space-y-6">
@@ -641,7 +685,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>Data_base ({departments.length} แผนก)</span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  คอลัมน์ A: แผนก, คอลัมน์ B: ชั้น/อาคาร, คอลัมน์ C: รายชื่อบริษัทคู่ค้า
+                  คอลัมน์ A: Company (บริษัทคู่สัญญา), คอลัมน์ B: Department (แผนก/หน่วยงาน)
                 </p>
               </div>
 
@@ -651,7 +695,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>Data_equpment ({equipmentList.length} เครื่อง)</span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  คอลัมน์ A: ชื่อเครื่องมือแพทย์, คอลัมน์ B: บริษัทคู่ค้า, คอลัมน์ C: แผนก
+                  คอลัมน์ A: Type_Equpment (ประเภท), คอลัมน์ B: Name_Equpment (ชื่อเครื่องมือแพทย์), คอลัมน์ C: Brand (ยี่ห้อ)
                 </p>
               </div>
             </div>

@@ -61,8 +61,8 @@ export interface EquipmentInfo {
   name: string;
   brand?: string;
   category: string;
-  department: string;
-  vendorCompany: string;
+  department?: string;
+  vendorCompany?: string;
 }
 
 export interface TelegramConfig {

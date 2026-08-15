@@ -217,13 +217,10 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto mb-6 text-xs text-slate-700 text-left space-y-1.5">
             <div className="font-bold flex items-center gap-1.5 text-blue-700">
               <ShieldCheck className="w-4 h-4 text-blue-600" />
-              <span>เข้าใช้งานได้ทันที (ไม่ต้องมีบัญชี Google)</span>
+              <span>การรักษาความปลอดภัยข้อมูลผู้ติดต่อ</span>
             </div>
             <p className="text-slate-600">
-              ท่านสามารถปลดล็อกเข้าดูข้อมูลได้ทันทีด้วยรหัสผ่าน Admin สำหรับการใช้งานทั่วไป
-            </p>
-            <p className="font-semibold text-slate-800 pt-1">
-              🔑 รหัสผ่านเริ่มต้น: <code className="bg-white px-2 py-0.5 rounded text-blue-700 border border-blue-300 font-bold font-mono">1234</code>
+              กรุณาเข้าสู่ระบบด้วยรหัสผ่านผู้ดูแลระบบ (Admin) เพื่อดูเบอร์โทรศัพท์และข้อมูลผู้ติดต่อบริษัทคู่ค้า
             </p>
           </div>
 
@@ -233,7 +230,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
             className="py-2.5 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-all inline-flex items-center gap-2 cursor-pointer"
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>กรอกรหัส PIN เพื่อปลดล็อก Admin</span>
+            <span>เข้าสู่ระบบด้วยรหัสผ่าน Admin</span>
           </button>
         </div>
       </div>

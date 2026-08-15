@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   UserPlus,
   Building2,
@@ -49,7 +49,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [company, setCompany] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<ContactRole>('ช่าง');
-  const [department, setDepartment] = useState(departments[0]?.name || 'Operating Room (ห้องผ่าตัด)');
+  const [department, setDepartment] = useState(departments[0]?.name || 'Physiotherapy');
   const [workType, setWorkType] = useState('งานซ่อม');
   const [customWorkType, setCustomWorkType] = useState('');
   const [visitorCount, setVisitorCount] = useState<number>(1);
@@ -60,6 +60,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [cardImage, setCardImage] = useState<string>('');
   const [sendTelegram, setSendTelegram] = useState<boolean>(true);
   const [notes, setNotes] = useState('');
+
+  // Keep department selected in sync when departments load
+  useEffect(() => {
+    if (departments.length > 0 && (!department || !departments.some(d => d.name === department))) {
+      setDepartment(departments[0].name);
+    }
+  }, [departments]);
 
   // UI state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -98,20 +105,38 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
   // Quick suggestions for companies
   const POPULAR_COMPANIES = [
-    'Olympus (โอลิมปัส)',
-    'Philips (ฟิลิปส์)',
-    'GE Healthcare',
-    'Double U Tech (ดับเบิ้ลยู เทค)',
-    'Xovic (โซวิค)',
-    'IDS Medical Systems',
-    'Bayer Thai (ไบเออร์)',
-    'Getinge (เกท์ทิงเก)',
-    'Draeger Medical',
-    'Carl Zeiss (คาร์ล ไซส์)',
-    'B.Braun (บีบราวน์)',
-    'Laser Engineer',
-    'Allwell Life',
-    'Kainatic MMS',
+    'เนชั่นแนล เฮลท์แคร์',
+    'ฟิลิปส์ (Philips)',
+    'จีอี เฮลธ์แคร์ (GE)',
+    'จำเริญแพทย์ภัณฑ์',
+    'เอสอาร์เอส แม็กซ์พลัส',
+    'ยู.พี.เมดิคอล ซอลเดอร์',
+    'เกตเวย์ เฮลท์แคร์',
+    'สิงห์ คอร์เปอเรชั่น',
+    'เทรูโม (Terumo)',
+    'มิตรการแพทย์',
+    'คอนเนค ไดแอกโนสติกส์',
+    'โซวี',
+    'ซีเอ็มดี เฮลธ์แคร์',
+    'มัตสึนากะ',
+    'ไอดีลเวล',
+    'แกรนดี อินเตอร์เนชั่นแนล',
+    'แบ็กซ์เตอร์ (Baxter)',
+    'สมิท แอนด์ เนฟฟิว',
+    'เลเซอร์ เอนจิเนียร์',
+    'แอคทีออน (Acteon)',
+    'วาเลอร์ เฮลธ์',
+    'ไพโอเนียร์ อินเตอร์ ซัพพลาย',
+    'ออริจิเนเตอร์',
+    'สยาม ฮอสพิทอล ซัพพลาย',
+    'ไพชีส เมดิคอล',
+    'ไซเอนซ์ เอนจิเนียร์',
+    'ไบโอแอคทีฟ อินเตอร์',
+    'เจเอส ยูนิทค',
+    'เซอร์เคิลไลฟ์',
+    'เอส.ดี. ทันตเวช 1988',
+    'Double U Tech',
+    'Olympus',
   ];
 
   // Handle Equipment toggling
