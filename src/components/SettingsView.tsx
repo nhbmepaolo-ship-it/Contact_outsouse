@@ -228,7 +228,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             สงวนสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Only)
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto mb-6">
-            หน้าการตั้งค่าระบบ, การเชื่อมต่อ Google Sheets, Webhook และ Telegram Bot อนุญาตให้เฉพาะเจ้าหน้าที่ฝ่ายเครื่องมือแพทย์ (BME) เข้าใช้งานเท่านั้น
+            หน้าการตั้งค่าระบบ, การเชื่อมต่อ Google Sheets, Webhook และ Telegram Bot อนุญาตให้เฉพาะเจ้าหน้าที่แผนกวิศวกรรมการแพทย์ (BME) เข้าใช้งานเท่านั้น
           </p>
 
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto mb-6 text-xs text-slate-700 text-left space-y-1.5">
@@ -371,6 +371,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   placeholder="-5275868334"
                   className="w-full px-3.5 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none text-slate-900 transition-all"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  💡 ข้อความแจ้งเตือนจะถูกส่งเข้า <b>กลุ่ม Telegram</b> ที่ระบุ (เช่น กลุ่ม <code>Contract BME Security Guard</code>) ตรวจสอบให้แน่ใจว่าได้ดึงบอทเข้ากลุ่มแล้ว
+                </p>
               </div>
             </div>
 

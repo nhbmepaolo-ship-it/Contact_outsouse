@@ -140,7 +140,7 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
             สงวนสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Only)
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto mb-6">
-            หน้าประวัติการเข้าปฏิบัติงาน, ทะเบียนรถ, รูปถ่ายบัตร และการส่งออกข้อมูล เป็นข้อมูลส่วนบุคคล (PDPA) ที่อนุญาตให้เฉพาะเจ้าหน้าที่ฝ่ายเครื่องมือแพทย์เข้าดูเท่านั้น
+            หน้าประวัติการเข้าปฏิบัติงาน, ทะเบียนรถ, รูปถ่ายบัตร และการส่งออกข้อมูล เป็นข้อมูลส่วนบุคคล (PDPA) ที่อนุญาตให้เฉพาะเจ้าหน้าที่แผนกวิศวกรรมการแพทย์เข้าดูเท่านั้น
           </p>
 
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto mb-6 text-xs text-slate-700 text-left space-y-1.5">

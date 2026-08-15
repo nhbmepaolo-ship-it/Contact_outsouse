@@ -121,13 +121,30 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>
-            © 2026 ฝ่ายเครื่องมือแพทย์ (Biomedical Engineering - BME) • โรงพยาบาล
-          </span>
-          <div className="flex items-center gap-3 text-slate-400">
-            <span>Telegram Bot: @8344422414</span>
+      <footer className="border-t border-slate-200/80 bg-white py-4 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-2 text-center sm:text-left">
+            <span className="font-semibold text-slate-800">
+              © 2026 BME Visitor Hub
+            </span>
+            <span className="hidden sm:inline text-slate-300">•</span>
+            <span>แผนกวิศวกรรมการแพทย์ (Biomedical Engineering)</span>
+          </div>
+
+          {/* Developer Credit - Designed Elegantly */}
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-50 border border-slate-200/90 text-slate-700 shadow-2xs">
+            <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-500 flex items-center justify-center text-white text-[10px] font-extrabold shadow-2xs">
+              SK
+            </div>
+            <span className="text-[11px] text-slate-500 font-medium">Developed by</span>
+            <span className="text-xs font-bold text-slate-900 tracking-tight">Supattra Kaewsuwan</span>
+          </div>
+
+          <div className="flex items-center gap-3 text-[11px] text-slate-400">
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Telegram Bot Ready
+            </span>
             <span>•</span>
             <span>นโยบายลบรูปภาพ 5 วัน (PDPA)</span>
           </div>

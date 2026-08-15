@@ -57,7 +57,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               เข้าสู่ระบบสิทธิ์ Admin
             </h3>
             <p className="text-xs text-slate-500">
-              สำหรับฝ่ายเครื่องมือแพทย์ (BME) ในการจัดการข้อมูล
+              สำหรับแผนกวิศวกรรมการแพทย์ (BME) ในการจัดการข้อมูล
             </p>
           </div>
         </div>
@@ -65,7 +65,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 mb-5 text-xs text-slate-700 space-y-1">
           <div className="font-semibold flex items-center gap-1.5 text-blue-700">
             <KeyRound className="w-4 h-4 text-blue-600" />
-            <span>พื้นที่ควบคุมเฉพาะเจ้าหน้าที่ฝ่ายเครื่องมือแพทย์</span>
+            <span>พื้นที่ควบคุมเฉพาะเจ้าหน้าที่แผนกวิศวกรรมการแพทย์</span>
           </div>
           <p className="text-slate-600 leading-relaxed">
             บุคคลภายนอกสามารถบันทึกข้อมูลและดูแดชบอร์ดสรุปได้ตามปกติ การเข้าถึงสมุดติดต่อและตั้งค่าระบบจำเป็นต้องยืนยันตัวตนด้วยรหัสผ่านผู้ดูแลระบบ

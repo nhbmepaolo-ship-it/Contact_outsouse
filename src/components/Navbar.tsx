@@ -46,12 +46,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   BME Visitor Hub
                 </span>
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wide">
-                  ฝ่ายเครื่องมือแพทย์
+                  แผนกวิศวกรรมการแพทย์
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden sm:block">
-                ระบบลงทะเบียน & บันทึกประวัติช่างและคู่ค้าเครื่องมือแพทย์
-              </p>
             </div>
           </div>
 

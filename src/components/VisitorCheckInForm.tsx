@@ -68,6 +68,8 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [cardImage, setCardImage] = useState<string>('');
   const [sendTelegram, setSendTelegram] = useState<boolean>(true);
   const [notes, setNotes] = useState('');
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const companyDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -192,6 +194,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       const reader = new FileReader();
       reader.onloadend = () => {
         setCardImage(reader.result as string);
+        if (formErrors.cardImage) setFormErrors(prev => ({ ...prev, cardImage: '' }));
       };
       reader.readAsDataURL(file);
     }
@@ -225,6 +228,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         setCardImage(dataUrl);
+        if (formErrors.cardImage) setFormErrors(prev => ({ ...prev, cardImage: '' }));
       }
       stopCamera();
     }
@@ -238,18 +242,68 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     setIsCameraActive(false);
   };
 
+  // Form Validation
+  const validateForm = (): boolean => {
+    const errors: { [key: string]: string } = {};
+
+    if (!name.trim()) {
+      errors.name = 'กรุณากรอกชื่อ - นามสกุล';
+    }
+    if (!phone.trim()) {
+      errors.phone = 'กรุณากรอกเบอร์โทรศัพท์ติดต่อ';
+    }
+    if (!company.trim()) {
+      errors.company = 'กรุณากรอกหรือเลือกชื่อบริษัท / สังกัด';
+    }
+    if (!role) {
+      errors.role = 'กรุณาเลือกตำแหน่ง / บทบาท';
+    }
+    if (!department) {
+      errors.department = 'กรุณาเลือกแผนกที่เข้าติดต่อ';
+    }
+    if (!workType) {
+      errors.workType = 'กรุณาเลือกลักษณะงาน';
+    } else if (workType === 'อื่นๆ (ระบุเอง)' && !customWorkType.trim()) {
+      errors.workType = 'กรุณาระบุลักษณะงานเพิ่มเติม';
+    }
+    if (!visitorCount || visitorCount < 1) {
+      errors.visitorCount = 'กรุณาระบุจำนวนผู้มาติดต่ออย่างน้อย 1 ท่าน';
+    }
+    if (selectedEquipments.length === 0) {
+      errors.equipments = 'กรุณาเลือกหรือระบุเครื่องมือแพทย์อย่างน้อย 1 รายการ';
+    }
+    if (!vehicleType) {
+      errors.vehicleType = 'กรุณาเลือกประเภทยานพาหนะ';
+    }
+    if (vehicleType !== 'ไม่มีพาหนะ/เดินเท้า' && !licensePlate.trim()) {
+      errors.licensePlate = 'กรุณาระบุเลขทะเบียนยานพาหนะ';
+    }
+    if (!cardImage) {
+      errors.cardImage = 'กรุณาถ่ายรูปบัตรหรืออัปโหลดรูปภาพบัตรที่แลก';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   // Submit Form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !company.trim()) {
-      alert('กรุณากรอกชื่อ-นามสกุล และชื่อบริษัท');
+    setSubmitAttempted(true);
+
+    if (!validateForm()) {
+      // Scroll to the top or the first error
+      const firstErrorEl = document.querySelector('.has-error, input:invalid');
+      if (firstErrorEl) {
+        firstErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
     setIsSubmitting(true);
     setTelegramStatus('กำลังบันทึกข้อมูล...');
 
-    const actualWorkType = workType === 'อื่นๆ (ระบุเอง)' && customWorkType ? customWorkType : workType;
+    const actualWorkType = workType === 'อื่นๆ (ระบุเอง)' && customWorkType ? customWorkType.trim() : workType;
     const finalEquipments = [...selectedEquipments];
 
     const now = new Date();
@@ -259,13 +313,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       timestamp: timestampStr,
       name: name.trim(),
       company: company.trim(),
-      phone: phone.trim() || '-',
+      phone: phone.trim(),
       department: department,
       workType: actualWorkType,
       visitorCount: Number(visitorCount) || 1,
-      cardImageUrl: cardImage || undefined,
+      cardImageUrl: cardImage,
       vehicleType: vehicleType,
-      licensePlate: licensePlate.trim() || '-',
+      licensePlate: vehicleType === 'ไม่มีพาหนะ/เดินเท้า' ? '-' : (licensePlate.trim() || '-'),
       equipmentHandled: finalEquipments,
       contactRole: role,
       notes: notes.trim() || undefined,
@@ -315,13 +369,18 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const handleResetForNew = () => {
     setName('');
     setCompany('');
+    setCompanySearch('');
     setPhone('');
     setSelectedEquipments([]);
+    setCustomEquipment('');
     setCardImage('');
     setLicensePlate('');
     setNotes('');
+    setCustomWorkType('');
     setSubmittedRecord(null);
     setTelegramStatus(null);
+    setFormErrors({});
+    setSubmitAttempted(false);
   };
 
   // If already submitted, show instant confirmation / visitor badge card
@@ -441,7 +500,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-200 text-[11px] font-bold mb-2.5 border border-blue-400/30 uppercase tracking-wide">
             <Sparkles className="w-3 h-3 text-blue-300" />
-            <span>ระบบบันทึกข้อมูล BME Kiosk</span>
+            <span>Visitor BME</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
             ลงทะเบียนผู้มาติดต่อ & ช่างเครื่องมือแพทย์
@@ -457,14 +516,31 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
       {/* Main Registration Card */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {submitAttempted && Object.keys(formErrors).length > 0 && (
+          <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold text-rose-900">กรุณากรอกข้อมูลให้ครบทุกช่องก่อนกดบันทึก:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-700">
+                {Object.values(formErrors).map((err, idx) => (
+                  <li key={idx}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
 
           {/* Section 1: Personal & Company Info */}
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-              <span>1. ข้อมูลผู้มาติดต่อ & บริษัท (Visitor Information)</span>
-            </h3>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                <span>1. ข้อมูลผู้มาติดต่อ & บริษัท</span>
+              </h3>
+              <span className="text-[11px] font-semibold text-slate-400">Visitor Info</span>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Name */}
@@ -478,30 +554,55 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                     type="text"
                     required
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (formErrors.name) setFormErrors({ ...formErrors, name: '' });
+                    }}
                     placeholder="เช่น สมศักดิ์ ใจดี"
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
+                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                      formErrors.name
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   />
-                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <User className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.name ? 'text-rose-500' : 'text-slate-400'}`} />
                 </div>
+                {formErrors.name && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.name}
+                  </p>
+                )}
               </div>
 
               {/* Phone */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  เบอร์โทรศัพท์ติดต่อ
+                  เบอร์โทรศัพท์ติดต่อ <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     id="visitor-phone-input"
                     type="tel"
+                    required
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (formErrors.phone) setFormErrors({ ...formErrors, phone: '' });
+                    }}
                     placeholder="เช่น 081-234-5678"
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
+                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                      formErrors.phone
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   />
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Phone className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.phone ? 'text-rose-500' : 'text-slate-400'}`} />
                 </div>
+                {formErrors.phone && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.phone}
+                  </p>
+                )}
               </div>
 
               {/* Company */}
@@ -524,11 +625,16 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       setCompany(e.target.value);
                       setCompanySearch(e.target.value);
                       setIsCompanyDropdownOpen(true);
+                      if (formErrors.company) setFormErrors({ ...formErrors, company: '' });
                     }}
                     placeholder="พิมพ์ค้นหาหรือเลือกบริษัท..."
-                    className="w-full pl-9 pr-8 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
+                    className={`w-full pl-9 pr-8 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                      formErrors.company
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   />
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Building2 className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.company ? 'text-rose-500' : 'text-slate-400'}`} />
                   <button
                     type="button"
                     onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
@@ -538,6 +644,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                     <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCompanyDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
                   </button>
                 </div>
+                {formErrors.company && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.company}
+                  </p>
+                )}
 
                 {/* Dropdown Menu */}
                 {isCompanyDropdownOpen && (
@@ -636,10 +747,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
           {/* Section 2: Department & Purpose */}
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-              <span>2. แผนกที่เข้าติดต่อ & ลักษณะงาน</span>
-            </h3>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                <span>2. แผนกที่เข้าติดต่อ & ลักษณะงาน</span>
+              </h3>
+              <span className="text-[11px] font-semibold text-slate-400">Department & Task</span>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Department */}
@@ -650,9 +764,17 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 <div className="relative">
                   <select
                     id="visitor-department-select"
+                    required
                     value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
+                    onChange={(e) => {
+                      setDepartment(e.target.value);
+                      if (formErrors.department) setFormErrors({ ...formErrors, department: '' });
+                    }}
+                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                      formErrors.department
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   >
                     {departments.map((dept) => (
                       <option key={dept.id} value={dept.name}>
@@ -660,8 +782,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       </option>
                     ))}
                   </select>
-                  <Layers className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Layers className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.department ? 'text-rose-500' : 'text-slate-400'}`} />
                 </div>
+                {formErrors.department && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.department}
+                  </p>
+                )}
               </div>
 
               {/* Work Type */}
@@ -672,9 +799,17 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 <div className="relative">
                   <select
                     id="visitor-worktype-select"
+                    required
                     value={workType}
-                    onChange={(e) => setWorkType(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
+                    onChange={(e) => {
+                      setWorkType(e.target.value);
+                      if (formErrors.workType) setFormErrors({ ...formErrors, workType: '' });
+                    }}
+                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                      formErrors.workType
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   >
                     {WORK_TYPES.map((wt, i) => (
                       <option key={i} value={wt}>
@@ -682,42 +817,68 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       </option>
                     ))}
                   </select>
-                  <Wrench className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Wrench className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.workType ? 'text-rose-500' : 'text-slate-400'}`} />
                 </div>
 
                 {workType === 'อื่นๆ (ระบุเอง)' && (
                   <input
                     type="text"
+                    required
                     value={customWorkType}
-                    onChange={(e) => setCustomWorkType(e.target.value)}
+                    onChange={(e) => {
+                      setCustomWorkType(e.target.value);
+                      if (formErrors.workType) setFormErrors({ ...formErrors, workType: '' });
+                    }}
                     placeholder="ระบุลักษณะงานเพิ่มเติม..."
                     className="w-full mt-2 px-3.5 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs"
                   />
+                )}
+                {formErrors.workType && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.workType}
+                  </p>
                 )}
               </div>
 
               {/* Visitor Count */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  จำนวนผู้มาติดต่อ (คน)
+                  จำนวนผู้มาติดต่อ (คน) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="visitor-count-input"
                   type="number"
                   min="1"
                   max="50"
+                  required
                   value={visitorCount}
-                  onChange={(e) => setVisitorCount(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900"
+                  onChange={(e) => {
+                    setVisitorCount(Math.max(1, parseInt(e.target.value) || 1));
+                    if (formErrors.visitorCount) setFormErrors({ ...formErrors, visitorCount: '' });
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-lg border text-xs text-slate-900 transition-all ${
+                    formErrors.visitorCount
+                      ? 'border-rose-500 ring-2 ring-rose-500/20'
+                      : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                  }`}
                 />
+                {formErrors.visitorCount && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.visitorCount}
+                  </p>
+                )}
               </div>
 
               {/* Equipment Multi-select with Thai Name */}
               <div className="col-span-1 md:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน
+                  เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน <span className="text-rose-500">* (เลือกอย่างน้อย 1 รายการ)</span>
                 </label>
-                <div className="flex flex-wrap gap-1.5 mb-2 max-h-44 overflow-y-auto p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                <div className={`flex flex-wrap gap-1.5 mb-2 max-h-44 overflow-y-auto p-2.5 rounded-xl border transition-all ${
+                  formErrors.equipments
+                    ? 'bg-rose-50/50 border-rose-400 ring-2 ring-rose-500/20'
+                    : 'bg-slate-50 border-slate-200'
+                }`}>
                   {equipmentList.slice(0, 20).map((eq) => {
                     const isSelected = selectedEquipments.includes(eq.name);
                     const displayNameTh = eq.nameTh || translateMedicalEquipmentToThai(eq.name, eq.category);
@@ -725,7 +886,10 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       <button
                         key={eq.id}
                         type="button"
-                        onClick={() => handleToggleEquipment(eq.name)}
+                        onClick={() => {
+                          handleToggleEquipment(eq.name);
+                          if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
+                        }}
                         className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all text-left flex flex-col cursor-pointer ${
                           isSelected
                             ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-xs'
@@ -758,17 +922,27 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         handleAddCustomEquipment();
+                        if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
                       }
                     }}
                   />
                   <button
                     type="button"
-                    onClick={handleAddCustomEquipment}
+                    onClick={() => {
+                      handleAddCustomEquipment();
+                      if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
+                    }}
                     className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                   >
                     เพิ่มเครื่องมือ
                   </button>
                 </div>
+
+                {formErrors.equipments && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.equipments}
+                  </p>
+                )}
 
                 {selectedEquipments.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -798,10 +972,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
           {/* Section 3: Vehicle & License Plate */}
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-              <span>3. ข้อมูลยานพาหนะ & ทะเบียน (Vehicle Information)</span>
-            </h3>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                <span>3. ข้อมูลยานพาหนะ & ทะเบียน</span>
+              </h3>
+              <span className="text-[11px] font-semibold text-slate-400">Vehicle Info</span>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Vehicle Type Selection */}
@@ -816,7 +993,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       <button
                         key={opt.type}
                         type="button"
-                        onClick={() => setVehicleType(opt.type)}
+                        onClick={() => {
+                          setVehicleType(opt.type);
+                          if (formErrors.vehicleType) setFormErrors({ ...formErrors, vehicleType: '' });
+                          if (opt.type === 'ไม่มีพาหนะ/เดินเท้า' && formErrors.licensePlate) {
+                            setFormErrors({ ...formErrors, licensePlate: '' });
+                          }
+                        }}
                         className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs font-medium transition-all text-left cursor-pointer ${
                           isSelected
                             ? 'bg-blue-50 text-blue-900 border-blue-600 ring-2 ring-blue-500/20 font-bold'
@@ -831,27 +1014,46 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                     );
                   })}
                 </div>
+                {formErrors.vehicleType && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.vehicleType}
+                  </p>
+                )}
               </div>
 
               {/* License Plate Number */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  ระบุเลขทะเบียนยานพาหนะ {vehicleType !== 'ไม่มีพาหนะ/เดินเท้า' && <span className="text-rose-500">*</span>}
+                  ระบุเลขทะเบียนยานพาหนะ {vehicleType !== 'ไม่มีพาหนะ/เดินเท้า' ? <span className="text-rose-500">*</span> : <span className="text-slate-400">(ถ้ามี)</span>}
                 </label>
                 <div className="relative">
                   <input
                     id="license-plate-input"
                     type="text"
+                    required={vehicleType !== 'ไม่มีพาหนะ/เดินเท้า'}
                     value={licensePlate}
-                    onChange={(e) => setLicensePlate(e.target.value)}
-                    placeholder="เช่น 2ขต 5189, 1กข 1234 กทม"
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs font-mono text-slate-900 bg-white"
+                    onChange={(e) => {
+                      setLicensePlate(e.target.value);
+                      if (formErrors.licensePlate) setFormErrors({ ...formErrors, licensePlate: '' });
+                    }}
+                    placeholder={vehicleType === 'ไม่มีพาหนะ/เดินเท้า' ? 'ไม่มีพาหนะ' : 'เช่น 2ขต 5189, 1กข 1234 กทม'}
+                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs font-mono text-slate-900 bg-white transition-all ${
+                      formErrors.licensePlate
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   />
-                  <Car className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Car className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.licensePlate ? 'text-rose-500' : 'text-slate-400'}`} />
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1.5">
-                  บันทึกสำหรับฝ่ายรักษาความปลอดภัยและระเบียบการจราจรในพื้นที่โรงพยาบาล
-                </p>
+                {formErrors.licensePlate ? (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.licensePlate}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    บันทึกสำหรับฝ่ายรักษาความปลอดภัยและระเบียบการจราจรในพื้นที่โรงพยาบาล
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -860,10 +1062,10 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
           {/* Section 4: Card Image Attachment & 5-Day Purge Policy */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                <span>4. แนบรูปบัตรที่แลกแล้ว (Card / Badge Photo)</span>
+                <span>4. แนบรูปบัตรที่แลกแล้ว <span className="text-rose-500">*</span></span>
               </h3>
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
                 <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -871,7 +1073,17 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
               </span>
             </div>
 
-            <div className="bg-slate-50 rounded-xl p-4 border border-dashed border-slate-300">
+            <div className={`rounded-xl p-4 border border-dashed transition-all ${
+              formErrors.cardImage
+                ? 'bg-rose-50/60 border-rose-400 ring-2 ring-rose-500/20'
+                : 'bg-slate-50 border-slate-300'
+            }`}>
+              {formErrors.cardImage && (
+                <div className="mb-3 p-2.5 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{formErrors.cardImage}</span>
+                </div>
+              )}
               {cardImage ? (
                 <div className="flex flex-col sm:flex-row items-center gap-4">
                   <img
