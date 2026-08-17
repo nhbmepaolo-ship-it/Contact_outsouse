@@ -35,6 +35,7 @@ import { StorageService } from '../services/storageService';
 import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 import { sendTelegramNotification, formatVisitorTelegramMessage } from '../services/telegramService';
 import { GoogleSheetsService } from '../services/googleSheetsService';
+import { compressImage } from '../utils/imageCompressor';
 
 interface VisitorCheckInFormProps {
   departments: DepartmentInfo[];
@@ -187,16 +188,23 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     }
   };
 
-  // Image Upload Handling
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Image Upload Handling with Fast Auto Compression
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCardImage(reader.result as string);
+      try {
+        const compressed = await compressImage(file, 800, 800, 0.75);
+        setCardImage(compressed);
         if (formErrors.cardImage) setFormErrors(prev => ({ ...prev, cardImage: '' }));
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('Failed to compress file image:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setCardImage(reader.result as string);
+          if (formErrors.cardImage) setFormErrors(prev => ({ ...prev, cardImage: '' }));
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -217,7 +225,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     }
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -226,8 +234,9 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        setCardImage(dataUrl);
+        const rawDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const compressed = await compressImage(rawDataUrl, 800, 800, 0.75);
+        setCardImage(compressed);
         if (formErrors.cardImage) setFormErrors(prev => ({ ...prev, cardImage: '' }));
       }
       stopCamera();
@@ -286,13 +295,12 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  // Submit Form
+  // Submit Form (Ultra Fast + Non-blocking Parallel Delivery)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitAttempted(true);
 
     if (!validateForm()) {
-      // Scroll to the top or the first error
       const firstErrorEl = document.querySelector('.has-error, input:invalid');
       if (firstErrorEl) {
         firstErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -301,7 +309,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     }
 
     setIsSubmitting(true);
-    setTelegramStatus('กำลังบันทึกข้อมูล...');
+    setTelegramStatus('กำลังบันทึกข้อมูลและส่งแจ้งเตือน...');
 
     const actualWorkType = workType === 'อื่นๆ (ระบุเอง)' && customWorkType ? customWorkType.trim() : workType;
     const finalEquipments = [...selectedEquipments];
@@ -326,32 +334,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       createdDate: now.toISOString(),
     };
 
-    // Save to Storage
+    // 1. Instant Local Save & Show Success Pass Immediately
     const savedRecord = StorageService.addVisitorRecord(newRecordData);
     onRecordAdded(savedRecord);
-
-    // Send to Google Sheets Webhook (100% Free real-time append) in background if configured
-    GoogleSheetsService.sendRecordToGoogleSheet(savedRecord).catch(err => {
-      console.warn('Google Sheets background sync notice:', err);
-    });
-
-    // Send Telegram Notification (with photo if captured)
-    if (sendTelegram) {
-      setTelegramStatus('กำลังส่งการแจ้งเตือนและรูปภาพไปยัง Telegram...');
-      const telegramMessage = formatVisitorTelegramMessage(savedRecord);
-      const telResult = await sendTelegramNotification(
-        telegramMessage,
-        undefined,
-        savedRecord.cardImageUrl || cardImage || undefined
-      );
-      if (telResult.success) {
-        setTelegramStatus('✅ ส่งการแจ้งเตือนและรูปภาพเข้า Telegram สำเร็จ');
-      } else {
-        setTelegramStatus(`⚠️ บันทึกสำเร็จ แต่ Telegram แจ้งเตือนไม่สำเร็จ: ${telResult.error || ''}`);
-      }
-    } else {
-      setTelegramStatus('✅ บันทึกข้อมูลสำเร็จ');
-    }
+    setSubmittedRecord(savedRecord);
+    setIsSubmitting(false);
 
     // Celebration Confetti
     try {
@@ -362,8 +349,42 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       });
     } catch {}
 
-    setSubmittedRecord(savedRecord);
-    setIsSubmitting(false);
+    // 2. Parallel Background Sync (Telegram + Google Sheets)
+    const backgroundTasks: Promise<any>[] = [];
+
+    // Task A: Google Sheets Webhook (Visitor_Logs)
+    backgroundTasks.push(
+      GoogleSheetsService.sendRecordToGoogleSheet(savedRecord).catch(err => {
+        console.warn('Google Sheets background sync notice:', err);
+        return { success: false, message: err?.message };
+      })
+    );
+
+    // Task B: Telegram Notification (with photo)
+    if (sendTelegram) {
+      const telegramMessage = formatVisitorTelegramMessage(savedRecord);
+      backgroundTasks.push(
+        sendTelegramNotification(
+          telegramMessage,
+          undefined,
+          savedRecord.cardImageUrl || cardImage || undefined
+        ).then(res => {
+          if (res.success) {
+            setTelegramStatus('✅ ส่งการแจ้งเตือนและรูปภาพเข้า Telegram สำเร็จ');
+          } else {
+            setTelegramStatus(`⚠️ บันทึกสำเร็จแล้ว แต่ Telegram แจ้งเตือนไม่สำเร็จ: ${res.error || ''}`);
+          }
+          return res;
+        }).catch(err => {
+          setTelegramStatus(`⚠️ เกิดข้อผิดพลาดส่ง Telegram: ${err.message}`);
+        })
+      );
+    } else {
+      setTelegramStatus('✅ บันทึกข้อมูลเรียบร้อยแล้ว');
+    }
+
+    // Execute in parallel without blocking user interaction
+    Promise.allSettled(backgroundTasks);
   };
 
   const handleResetForNew = () => {

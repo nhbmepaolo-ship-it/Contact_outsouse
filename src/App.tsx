@@ -12,6 +12,7 @@ import { CompanyDirectoryView } from './components/CompanyDirectoryView';
 import { SettingsView } from './components/SettingsView';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { StorageService } from './services/storageService';
+import { GoogleSheetsService } from './services/googleSheetsService';
 import { VisitorRecord, DepartmentInfo, EquipmentInfo } from './types';
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
   const [records, setRecords] = useState<VisitorRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
   const [equipmentList, setEquipmentList] = useState<EquipmentInfo[]>([]);
+  const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
 
   // Initial load
   const loadData = () => {
@@ -33,6 +35,31 @@ export default function App() {
 
   useEffect(() => {
     loadData();
+
+    // Auto-connect and sync with Google Sheets on every page load
+    const autoSyncGoogleSheets = async () => {
+      try {
+        setIsAutoSyncing(true);
+        await GoogleSheetsService.initSettings();
+        const syncResult = await GoogleSheetsService.fetchMasterDataFromSheet();
+        if (syncResult.success) {
+          if (syncResult.departments && syncResult.departments.length > 0) {
+            StorageService.saveDepartments(syncResult.departments);
+            setDepartments(syncResult.departments);
+          }
+          if (syncResult.equipments && syncResult.equipments.length > 0) {
+            StorageService.saveEquipment(syncResult.equipments);
+            setEquipmentList(syncResult.equipments);
+          }
+        }
+      } catch (err) {
+        console.warn('Background auto-sync notice:', err);
+      } finally {
+        setIsAutoSyncing(false);
+      }
+    };
+
+    autoSyncGoogleSheets();
   }, []);
 
   const handleRecordAdded = (newRecord: VisitorRecord) => {

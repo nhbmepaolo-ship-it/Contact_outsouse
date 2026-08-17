@@ -25,6 +25,29 @@ const STORAGE_KEYS = {
   ADMIN_AUTH: 'bme_admin_authenticated_v2',
 };
 
+const DUMMY_NAMES_OR_COMPANIES = new Set([
+  'มีจะกิน',
+  'มีจะกิน จำกัด',
+  'พอดีคำ',
+  'ซื่อตรง ใจดี',
+  'ซื่อตรง ใจซื่อดี',
+  'มาลี มีเงิน'
+]);
+
+function isDummyOrPurged(company?: string, name?: string): boolean {
+  const c = (company || '').trim().toLowerCase();
+  const n = (name || '').trim().toLowerCase();
+  return (
+    DUMMY_NAMES_OR_COMPANIES.has(company || '') ||
+    DUMMY_NAMES_OR_COMPANIES.has(name || '') ||
+    c.includes('มีจะกิน') ||
+    c.includes('พอดีคำ') ||
+    n.includes('ซื่อตรง ใจดี') ||
+    n.includes('ซื่อตรง ใจซื่อดี') ||
+    n.includes('มาลี มีเงิน')
+  );
+}
+
 export class StorageService {
   // ================= VISITOR RECORDS =================
 
@@ -33,17 +56,26 @@ export class StorageService {
       const data = localStorage.getItem(STORAGE_KEYS.VISITORS);
       if (!data) {
         // Prepopulate with initial data and apply retention policy
-        const initial = applyImageRetentionPolicy(INITIAL_VISITOR_RECORDS);
+        const initial = applyImageRetentionPolicy(INITIAL_VISITOR_RECORDS).filter(
+          r => !isDummyOrPurged(r.company, r.name)
+        );
         this.saveVisitorRecords(initial);
         return initial;
       }
       const parsed: VisitorRecord[] = JSON.parse(data);
+      // Filter out any dummy test rows that may have persisted in older sessions
+      const clean = parsed.filter(r => !isDummyOrPurged(r.company, r.name));
+      if (clean.length !== parsed.length) {
+        this.saveVisitorRecords(clean);
+      }
       // Run retention policy whenever reading
-      const withRetention = applyImageRetentionPolicy(parsed);
+      const withRetention = applyImageRetentionPolicy(clean);
       return withRetention;
     } catch (e) {
       console.error('Error reading visitor records from storage:', e);
-      return applyImageRetentionPolicy(INITIAL_VISITOR_RECORDS);
+      return applyImageRetentionPolicy(INITIAL_VISITOR_RECORDS).filter(
+        r => !isDummyOrPurged(r.company, r.name)
+      );
     }
   }
 
@@ -76,8 +108,52 @@ export class StorageService {
 
   static deleteVisitorRecord(id: string): void {
     const records = this.getVisitorRecords();
+    const recordToDelete = records.find(r => r.id === id);
     const filtered = records.filter(r => r.id !== id);
     this.saveVisitorRecords(filtered);
+
+    // Also update company contacts if this was a registered contact
+    if (recordToDelete) {
+      this.recalculateContactsAfterVisitorDeletion(recordToDelete, filtered);
+    }
+  }
+
+  /**
+   * Keep contacts directory accurate when a visitor log is removed
+   */
+  static recalculateContactsAfterVisitorDeletion(deletedRecord: VisitorRecord, remainingVisitors: VisitorRecord[]): void {
+    try {
+      const contacts = this.getCompanyContacts();
+      const comp = deletedRecord.company.trim().toLowerCase();
+      const name = deletedRecord.name.trim().toLowerCase();
+
+      const matchingRemaining = remainingVisitors.filter(
+        v => v.company.trim().toLowerCase() === comp && v.name.trim().toLowerCase() === name
+      );
+
+      const contactIndex = contacts.findIndex(
+        c => c.companyName.trim().toLowerCase() === comp && c.contactName.trim().toLowerCase() === name
+      );
+
+      if (contactIndex >= 0) {
+        if (matchingRemaining.length === 0) {
+          // No more visits from this person, remove from contacts directory
+          contacts.splice(contactIndex, 1);
+        } else {
+          // Recalculate stats from remaining
+          const mergedEq = new Set<string>();
+          matchingRemaining.forEach(v => {
+            (v.equipmentHandled || []).forEach(e => mergedEq.add(e));
+          });
+          contacts[contactIndex].visitCount = matchingRemaining.length;
+          contacts[contactIndex].lastVisit = matchingRemaining[0].timestamp;
+          contacts[contactIndex].equipmentList = Array.from(mergedEq);
+        }
+        this.saveCompanyContacts(contacts);
+      }
+    } catch (e) {
+      console.error('Error updating contacts after deletion:', e);
+    }
   }
 
   // ================= COMPANY CONTACTS (DEDUPLICATION & AGGREGATION) =================
@@ -86,14 +162,23 @@ export class StorageService {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CONTACTS);
       if (!data) {
-        const initial = buildInitialContacts(INITIAL_VISITOR_RECORDS);
+        const initial = buildInitialContacts(INITIAL_VISITOR_RECORDS).filter(
+          c => !isDummyOrPurged(c.companyName, c.contactName)
+        );
         this.saveCompanyContacts(initial);
         return initial;
       }
-      return JSON.parse(data);
+      const parsed: CompanyContact[] = JSON.parse(data);
+      const clean = parsed.filter(c => !isDummyOrPurged(c.companyName, c.contactName));
+      if (clean.length !== parsed.length) {
+        this.saveCompanyContacts(clean);
+      }
+      return clean;
     } catch (e) {
       console.error('Error reading company contacts:', e);
-      return buildInitialContacts(INITIAL_VISITOR_RECORDS);
+      return buildInitialContacts(INITIAL_VISITOR_RECORDS).filter(
+        c => !isDummyOrPurged(c.companyName, c.contactName)
+      );
     }
   }
 

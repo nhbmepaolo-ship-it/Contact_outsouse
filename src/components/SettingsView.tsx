@@ -15,19 +15,22 @@ import {
   Wrench,
   KeyRound,
   Lock,
+  Unlock,
+  Edit3,
   ExternalLink,
   Copy,
   Check,
   Code2,
   Zap,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { TelegramConfig, DepartmentInfo, EquipmentInfo, VisitorRecord } from '../types';
 import { StorageService } from '../services/storageService';
 import { testTelegramConnection } from '../services/telegramService';
 import { applyImageRetentionPolicy } from '../utils/imageRetention';
-import { GoogleSheetsService, APPS_SCRIPT_TEMPLATE } from '../services/googleSheetsService';
+import { GoogleSheetsService, APPS_SCRIPT_TEMPLATE, DEFAULT_SHEET_WEBHOOK_URL, DEFAULT_SHEET_ID } from '../services/googleSheetsService';
 
 interface SettingsViewProps {
   departments: DepartmentInfo[];
@@ -56,12 +59,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Google Sheet State
   const [sheetId, setSheetId] = useState(() => GoogleSheetsService.getSheetId());
   const [webhookUrl, setWebhookUrl] = useState(() => GoogleSheetsService.getWebhookUrl());
+  const [isEditingWebhook, setIsEditingWebhook] = useState(false);
+  const [tempWebhookUrl, setTempWebhookUrl] = useState(() => GoogleSheetsService.getWebhookUrl());
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   const [sheetSyncResult, setSheetSyncResult] = useState<string | null>(null);
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isBatchSyncing, setIsBatchSyncing] = useState(false);
+  const [batchSyncResult, setBatchSyncResult] = useState<string | null>(null);
   const [copiedScript, setCopiedScript] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [showScriptCode, setShowScriptCode] = useState(false);
+
+  // Sync settings from server backend on mount
+  React.useEffect(() => {
+    GoogleSheetsService.initSettings().then(() => {
+      const currentUrl = GoogleSheetsService.getWebhookUrl();
+      setWebhookUrl(currentUrl);
+      setTempWebhookUrl(currentUrl);
+      setSheetId(GoogleSheetsService.getSheetId());
+    });
+  }, []);
 
   // Retention Status
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
@@ -140,6 +158,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     alert('บันทึกการตั้งค่า Google Sheets เรียบร้อยแล้ว');
   };
 
+  // Webhook URL Edit/Save/Reset Actions
+  const handleStartEditWebhook = () => {
+    setTempWebhookUrl(webhookUrl);
+    setIsEditingWebhook(true);
+  };
+
+  const handleCancelEditWebhook = () => {
+    setTempWebhookUrl(webhookUrl);
+    setIsEditingWebhook(false);
+  };
+
+  const handleSaveEditedWebhook = () => {
+    const cleanUrl = tempWebhookUrl.trim();
+    if (!cleanUrl) {
+      alert('กรุณาระบุ Webhook URL ที่ถูกต้อง');
+      return;
+    }
+    setWebhookUrl(cleanUrl);
+    GoogleSheetsService.saveWebhookUrl(cleanUrl);
+    setIsEditingWebhook(false);
+    alert('✅ บันทึก Webhook URL ใหม่เรียบร้อยแล้ว');
+  };
+
+  const handleResetToDefaultWebhook = () => {
+    if (confirm('คุณต้องการคืนค่าเป็น Google Apps Script Webhook URL เริ่มต้นของระบบใช่หรือไม่?')) {
+      setWebhookUrl(DEFAULT_SHEET_WEBHOOK_URL);
+      setTempWebhookUrl(DEFAULT_SHEET_WEBHOOK_URL);
+      GoogleSheetsService.saveWebhookUrl(DEFAULT_SHEET_WEBHOOK_URL);
+      setIsEditingWebhook(false);
+      alert('✅ คืนค่าเป็น Webhook URL เริ่มต้นเรียบร้อยแล้ว');
+    }
+  };
+
+  const handleCopyWebhookUrl = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 2500);
+  };
+
   // Test Webhook Connection
   const handleTestSheetWebhook = async () => {
     setIsTestingWebhook(true);
@@ -172,6 +229,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const expiredCount = updated.filter(r => r.isImageExpired).length;
     setCleanupMessage(`✅ ตรวจสอบเรียบร้อย: พบรูปภาพที่หมดอายุตามนโยบาย 5 วันทั้งหมด ${expiredCount} รายการ (ระบบซ่อนและลบตามมาตรฐาน PDPA เรียบร้อย)`);
     setTimeout(() => setCleanupMessage(null), 5000);
+  };
+
+  // Batch Sync All Records to Visitor_Logs
+  const handleBatchSyncToSheet = async () => {
+    if (!webhookUrl) {
+      alert('กรุณาระบุและบันทึก Google Apps Script Webhook URL ก่อนทำการซิงค์');
+      return;
+    }
+    if (!records || records.length === 0) {
+      alert('ไม่มีข้อมูลประวัติผู้มาติดต่อที่จะซิงค์');
+      return;
+    }
+
+    setIsBatchSyncing(true);
+    setBatchSyncResult(null);
+
+    const result = await GoogleSheetsService.batchSyncAllRecords(records);
+    if (result.success) {
+      setBatchSyncResult(`✅ ${result.message}`);
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+    } else {
+      setBatchSyncResult(`❌ ${result.message}`);
+    }
+    setIsBatchSyncing(false);
   };
 
   // Add Department
@@ -475,40 +558,148 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </a>
             </div>
 
-            <form onSubmit={handleSaveSheetConfig} className="space-y-5">
-              {/* Webhook URL Input */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    Google Apps Script Web App URL (Webhook) <span className="text-emerald-600 font-bold">*แนะนำ</span>
-                  </label>
-                  <span className="text-[11px] text-slate-400 font-mono">https://script.google.com/macros/s/.../exec</span>
+            {/* Auto Connection Banner */}
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 rounded-xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
-                <input
-                  id="sheets-webhook-input"
-                  type="url"
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  placeholder="วาง URL เว็บแอปที่ได้จากการ Deploy ใน Google Sheet ที่นี่"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 focus:outline-none text-slate-900 transition-all"
-                />
-                <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-emerald-950 text-sm">
+                      ระบบเชื่อมต่อกับ Google Sheet อัตโนมัติ 100%
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                      AUTO SYNC ACTIVE
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-800 mt-0.5 leading-relaxed">
+                    ทุกครั้งที่เปิดหน้าเว็บ ระบบจะเชื่อมต่อและโหลดข้อมูลจาก Google Sheet โดยอัตโนมัติ และเมื่อมีการลงทะเบียน ข้อมูลจะถูกบันทึกลงชีท <b>Visitor_Logs</b> ทันทีโดยไม่ต้องกดเชื่อมต่อซ้ำ
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveSheetConfig} className="space-y-5">
+              {/* Webhook URL Input with Locked / Edit Toggle */}
+              <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-4 sm:p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {isEditingWebhook ? (
+                      <Unlock className="w-4 h-4 text-amber-600" />
+                    ) : (
+                      <Lock className="w-4 h-4 text-emerald-600" />
+                    )}
+                    <label className="text-xs font-bold text-slate-800">
+                      Google Apps Script Web App URL (Fixed Webhook)
+                    </label>
+                    {isEditingWebhook ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                        โหมดแก้ไข URL
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Fix ค่าอัตโนมัติ (Locked)
+                      </span>
+                    )}
+                  </div>
+
+                  {!isEditingWebhook ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyWebhookUrl}
+                        className="px-2.5 py-1 rounded-md bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      >
+                        {copiedWebhook ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedWebhook ? 'คัดลอกแล้ว' : 'คัดลอก URL'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStartEditWebhook}
+                        className="px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>แก้ไข URL</span>
+                      </button>
+
+                      {webhookUrl !== DEFAULT_SHEET_WEBHOOK_URL && (
+                        <button
+                          type="button"
+                          onClick={handleResetToDefaultWebhook}
+                          className="px-2.5 py-1 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>คืนค่าเริ่มต้น</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveEditedWebhook}
+                        className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>บันทึก URL ใหม่</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEditWebhook}
+                        className="px-2.5 py-1 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-semibold transition-all cursor-pointer"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {!isEditingWebhook ? (
+                  <div className="p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between gap-2 overflow-hidden shadow-2xs">
+                    <span className="font-mono text-xs text-slate-800 break-all select-all font-medium">
+                      {webhookUrl || DEFAULT_SHEET_WEBHOOK_URL}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <input
+                      id="sheets-webhook-input"
+                      type="url"
+                      value={tempWebhookUrl}
+                      onChange={(e) => setTempWebhookUrl(e.target.value)}
+                      placeholder="วาง URL เว็บแอปใหม่ที่นี่"
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-blue-400 bg-white font-mono text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:outline-none text-slate-900 transition-all shadow-xs"
+                      autoFocus
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      เมื่อกรอก URL เสร็จแล้วให้กดปุ่ม <b>"บันทึก URL ใหม่"</b> เพื่อบันทึกลงระบบและล็อคค่าอัตโนมัติ
+                    </p>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-500 flex items-center gap-1">
                   <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span>เมื่อใส่ Webhook นี้ ทุกครั้งที่มีคนลงทะเบียน ข้อมูลจะถูกเพิ่มเป็นแถวใหม่ในชีท <b>Visitor_Logs</b> อัตโนมัติทันที</span>
+                  <span>เมื่อมีการลงทะเบียน ข้อมูลจะถูกบันทึกส่งตรงเข้าชีท <b>Visitor_Logs</b> ตาม URL เว็บแอปนี้อัตโนมัติ</span>
                 </p>
               </div>
 
               {/* Sheet ID Input */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Google Sheet ID (สำหรับเปิดดูและซิงค์ข้อมูล)
-                </label>
+              <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-4 sm:p-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800">
+                    Google Sheet ID (เชื่อมโยงไฟล์สเปรดชีต)
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-mono">1ry7U0ZSuMT5yYYkDpRHukuYLQQrPEfy4jP3GnpxyJM8</span>
+                </div>
                 <input
                   type="text"
                   value={sheetId}
                   onChange={(e) => setSheetId(e.target.value)}
                   placeholder="1ry7U0ZSuMT5yYYkDpRHukuYLQQrPEfy4jP3GnpxyJM8"
-                  className="w-full px-3.5 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none text-slate-900 transition-all"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 bg-white font-mono text-xs focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none text-slate-900 transition-all shadow-2xs"
                 />
               </div>
 
@@ -530,6 +721,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               )}
 
+              {batchSyncResult && (
+                <div className="p-3.5 rounded-lg bg-emerald-50 text-emerald-900 text-xs font-semibold border border-emerald-200 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{batchSyncResult}</span>
+                </div>
+              )}
+
               {sheetSyncResult && (
                 <div className="p-3.5 rounded-lg bg-blue-50 text-blue-900 text-xs font-medium border border-blue-200 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
@@ -545,6 +743,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 >
                   <Save className="w-4 h-4" />
                   <span>บันทึกการตั้งค่าชีท</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBatchSyncToSheet}
+                  disabled={isBatchSyncing || !webhookUrl || records.length === 0}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isBatchSyncing ? 'animate-spin' : ''}`} />
+                  <span>⚡ ซิงค์ข้อมูลทั้งหมด ({records.length} รายการ) เข้าชีท Visitor_Logs</span>
                 </button>
 
                 <button
@@ -578,6 +786,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Legacy Data Migration Help Banner */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-5 shadow-xs space-y-3">
+            <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <span>วิธีย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" มารวมในชีท "Visitor_Logs" ชีทเดียว</span>
+            </div>
+            <p className="text-xs text-blue-800 leading-relaxed">
+              หากต้องการให้ข้อมูลทั้งหมดรวมอยู่ในชีท <b>Visitor_Logs</b> เพียงชีทเดียวอย่างเป็นระเบียบ ท่านสามารถทำได้ง่ายๆ 2 วิธี:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-700">
+              <div className="bg-white p-3.5 rounded-lg border border-blue-100 space-y-1">
+                <b className="text-indigo-700">วิธีที่ 1: ซิงค์จากหน้าเว็บนี้ทันที</b>
+                <p className="text-slate-600 text-[11px]">
+                  กดปุ่มสีม่วง <b>"⚡ ซิงค์ข้อมูลทั้งหมด ({records.length} รายการ) เข้าชีท Visitor_Logs"</b> ด้านบน ระบบจะส่งข้อมูลทั้งหมดเข้าชีทใหม่ทันที
+                </p>
+              </div>
+              <div className="bg-white p-3.5 rounded-lg border border-blue-100 space-y-1">
+                <b className="text-indigo-700">วิธีที่ 2: รัน Migration ใน Apps Script</b>
+                <p className="text-slate-600 text-[11px]">
+                  ในหน้า Apps Script ให้เลือกฟังก์ชัน <b><code>migrateOldFormDataToVisitorLogs</code></b> จากดรอปดาวน์ด้านบน แล้วกด <b>"เรียกใช้" (Run)</b> สคริปต์จะย้ายข้อมูลทั้งหมดจากชีทเก่าเข้า "Visitor_Logs" ทันทีโดยไม่ซ้ำซ้อน
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Setup Guide & Ready Code */}
