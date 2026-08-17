@@ -12,17 +12,20 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
-  Layers,
-  Filter,
   Download,
   Copy,
   Check,
-  Tag
+  Tag,
+  Users,
+  Calendar,
+  Layers,
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { CompanyContact, ContactRole, EquipmentInfo } from '../types';
 import { StorageService } from '../services/storageService';
 import { cleanPhoneNumber, formatPhoneNumber } from '../utils/phoneFormatter';
+import { groupContactsByCompany, GroupedCompany, getCanonicalCompanyName } from '../utils/companyNormalizer';
 
 interface CompanyDirectoryViewProps {
   isAdmin: boolean;
@@ -61,40 +64,66 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
     setContacts(StorageService.getCompanyContacts());
   };
 
-  // Distinct company list for filter
-  const distinctCompanies = useMemo(() => {
-    const set = new Set<string>();
-    contacts.forEach(c => {
-      if (c.companyName) set.add(c.companyName.trim());
-    });
-    return Array.from(set).sort();
+  // Group contacts by company
+  const groupedCompanies = useMemo(() => {
+    return groupContactsByCompany(contacts);
   }, [contacts]);
 
-  // Filtered contacts
-  const filteredContacts = useMemo(() => {
-    return contacts.filter(c => {
-      const matchSearch =
-        c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.equipmentList?.some(eq => eq.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Distinct company list for filter dropdown
+  const distinctCompanies = useMemo(() => {
+    return groupedCompanies.map(g => g.companyName).sort((a, b) => a.localeCompare(b, 'th'));
+  }, [groupedCompanies]);
 
-      const matchRole = roleFilter === 'all' || c.role === roleFilter;
-      const matchCompany = companyFilter === 'all' || c.companyName === companyFilter;
+  // Filtered Grouped Companies
+  const filteredGroupedCompanies = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim();
 
-      return matchSearch && matchRole && matchCompany;
+    return groupedCompanies.filter(group => {
+      // Check Company Match
+      const matchCompanyFilter = companyFilter === 'all' || 
+        group.companyName === companyFilter || 
+        group.aliases.includes(companyFilter);
+
+      // Check Role Match (any contact in this company has the role)
+      const matchRole = roleFilter === 'all' || 
+        group.contacts.some(c => c.role === roleFilter);
+
+      // Check Search Term
+      let matchSearch = true;
+      if (term) {
+        const matchCompName = group.companyName.toLowerCase().includes(term) ||
+          group.aliases.some(a => a.toLowerCase().includes(term));
+
+        const matchContacts = group.contacts.some(c =>
+          c.contactName.toLowerCase().includes(term) ||
+          c.phone.toLowerCase().includes(term) ||
+          (c.equipmentList || []).some(eq => eq.toLowerCase().includes(term))
+        );
+
+        const matchEquipments = group.allEquipments.some(eq => eq.toLowerCase().includes(term));
+
+        matchSearch = matchCompName || matchContacts || matchEquipments;
+      }
+
+      return matchCompanyFilter && matchRole && matchSearch;
     });
-  }, [contacts, searchTerm, roleFilter, companyFilter]);
+  }, [groupedCompanies, searchTerm, roleFilter, companyFilter]);
+
+  // Total unique contacts count currently visible
+  const totalVisibleStaff = useMemo(() => {
+    return filteredGroupedCompanies.reduce((acc, g) => acc + g.contacts.length, 0);
+  }, [filteredGroupedCompanies]);
 
   const handleCopyPhone = (phone: string) => {
-    navigator.clipboard.writeText(phone);
-    setCopiedPhone(phone);
+    const cleaned = cleanPhoneNumber(phone);
+    navigator.clipboard.writeText(cleaned);
+    setCopiedPhone(cleaned);
     setTimeout(() => setCopiedPhone(null), 2000);
   };
 
-  const handleOpenAdd = () => {
+  const handleOpenAdd = (presetCompany?: string) => {
     setEditingContact(null);
-    setFormCompany('');
+    setFormCompany(presetCompany || '');
     setFormName('');
     setFormRole('ช่าง');
     setFormPhone('');
@@ -158,7 +187,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
       });
       setTimeout(() => {
         setIsModalOpen(false);
-      }, 1800);
+      }, 1500);
     } else {
       setFormNotice({
         type: 'success',
@@ -166,12 +195,12 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
       });
       setTimeout(() => {
         setIsModalOpen(false);
-      }, 1200);
+      }, 1000);
     }
   };
 
-  const handleDeleteContact = (id: string, name: string) => {
-    if (confirm(`คุณต้องการลบผู้ติดต่อ "${name}" ออกจากสมุดโทรศัพท์หรือไม่?`)) {
+  const handleDeleteContact = (id: string, name: string, company: string) => {
+    if (confirm(`คุณต้องการลบผู้ติดต่อ "${name}" (${company}) ออกจากสมุดโทรศัพท์หรือไม่?`)) {
       StorageService.deleteCompanyContact(id);
       reloadContacts();
     }
@@ -179,16 +208,22 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
 
   const handleExportCSV = () => {
     const headers = ['บริษัท', 'ชื่อผู้ติดต่อ', 'ตำแหน่ง/บทบาท', 'เบอร์โทร', 'เครื่องมือแพทย์ที่ดูแล', 'แผนกที่ดูแล', 'จำนวนครั้งที่เข้าพบ', 'เข้าพบล่าสุด'];
-    const rows = filteredContacts.map(c => [
-      `"${c.companyName}"`,
-      `"${c.contactName}"`,
-      `"${c.role}"`,
-      `"${c.phone}"`,
-      `"${(c.equipmentList || []).join('; ')}"`,
-      `"${(c.departmentsCovered || []).join('; ')}"`,
-      c.visitCount || 1,
-      `"${c.lastVisit || '-'}"`
-    ]);
+    const rows: string[][] = [];
+
+    filteredGroupedCompanies.forEach(g => {
+      g.contacts.forEach(c => {
+        rows.push([
+          `"${g.companyName}"`,
+          `"${c.contactName}"`,
+          `"${c.role}"`,
+          `"${c.phone}"`,
+          `"${(c.equipmentList || []).join('; ')}"`,
+          `"${(c.departmentsCovered || []).join('; ')}"`,
+          String(c.visitCount || 1),
+          `"${c.lastVisit || '-'}"`
+        ]);
+      });
+    });
 
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -200,7 +235,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // If not Admin, show Locked Screen with friendly unlock prompt
+  // If not Admin, show Locked Screen
   if (!isAdmin) {
     return (
       <div id="company-directory-locked" className="max-w-2xl mx-auto py-12 px-4 text-center">
@@ -238,7 +273,22 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
     );
   }
 
-  // Admin View
+  // Role badge helper
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case 'ผู้แทน':
+        return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'เจ้าหน้าที่ส่งสินค้า':
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'วิศวกรบริการ':
+        return 'bg-cyan-50 text-cyan-700 border-cyan-200';
+      default:
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    }
+  };
+
   return (
     <div id="company-directory-view" className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
       {/* Header & Title */}
@@ -254,7 +304,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
             </span>
           </div>
           <p className="text-slate-500 text-xs sm:text-sm mt-1">
-            ฐานข้อมูลรวมตัวแทน ช่าง และสเปเชียลลิสต์ พร้อมรายการเครื่องมือแพทย์ที่ดูแล (จัดกลุ่มเครื่องมือหลายรายการอัตโนมัติ ไม่บันทึกซ้ำ)
+            จัดกลุ่มตามบริษัทคู่ค้าอัตโนมัติ รวมผู้ติดต่อ ช่าง และสเปเชียลลิสต์ในแต่ละบริษัทไว้ในกรอบเดียวกันอย่างเป็นระเบียบ
           </p>
         </div>
 
@@ -269,7 +319,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
           </button>
           <button
             id="add-company-contact-btn"
-            onClick={handleOpenAdd}
+            onClick={() => handleOpenAdd()}
             className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -319,7 +369,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
               onChange={(e) => setCompanyFilter(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-xs text-slate-900 bg-white transition-all"
             >
-              <option value="all">ทุกบริษัทคู่ค้า ({distinctCompanies.length})</option>
+              <option value="all">ทุกบริษัทคู่ค้า ({distinctCompanies.length} บริษัท)</option>
               {distinctCompanies.map((c, i) => (
                 <option key={i} value={c}>{c}</option>
               ))}
@@ -330,7 +380,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
         {/* Count Summary */}
         <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
           <span>
-            แสดงผล <b>{filteredContacts.length}</b> จากทั้งหมด <b>{contacts.length}</b> ผู้ติดต่อ
+            แสดงผล <b>{filteredGroupedCompanies.length}</b> บริษัท (รวม <b>{totalVisibleStaff}</b> ผู้ติดต่อ) จากทั้งหมด <b>{groupedCompanies.length}</b> บริษัท
           </span>
           {(searchTerm || roleFilter !== 'all' || companyFilter !== 'all') && (
             <button
@@ -347,126 +397,167 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
         </div>
       </div>
 
-      {/* Contact Cards Grid */}
-      {filteredContacts.length === 0 ? (
+      {/* Company Cards Grid (Grouped by Company) */}
+      {filteredGroupedCompanies.length === 0 ? (
         <div className="bg-white rounded-xl p-12 text-center border border-slate-200 shadow-sm">
           <Building2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-slate-700">ไม่พบข้อมูลผู้ติดต่อที่ตรงกับเงื่อนไข</h3>
+          <h3 className="text-base font-bold text-slate-700">ไม่พบข้อมูลบริษัทหรือผู้ติดต่อที่ตรงกับเงื่อนไข</h3>
           <p className="text-xs text-slate-500 mt-1">ลองเปลี่ยนคำค้นหาหรือตัวกรองบริษัท</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredContacts.map((c) => {
-            const roleBadgeColor =
-              c.role === 'ผู้แทน'
-                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                : c.role === 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ'
-                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                : c.role === 'เจ้าหน้าที่ส่งสินค้า'
-                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200';
-
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredGroupedCompanies.map((group) => {
             return (
               <div
-                key={c.id}
-                className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm hover:shadow transition-all flex flex-col justify-between"
+                key={group.id}
+                className="bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
               >
-                <div>
-                  {/* Company & Role Header */}
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                {/* 1. Company Card Header */}
+                <div className="p-4 border-b border-slate-100 bg-slate-50/80">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
                         <Building2 className="w-5 h-5" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900 text-sm leading-snug">
-                          {c.companyName}
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-slate-900 text-sm leading-snug truncate" title={group.companyName}>
+                          {group.companyName}
                         </h3>
-                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded border font-semibold mt-0.5 ${roleBadgeColor}`}>
-                          {c.role}
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+                          <Users className="w-3.5 h-3.5 text-blue-600" />
+                          <span className="font-semibold text-slate-700">
+                            {group.contacts.length} ผู้ติดต่อ / เจ้าหน้าที่
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleOpenEdit(c)}
-                        className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                        title="แก้ไขข้อมูล"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteContact(c.id, c.contactName)}
-                        className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                        title="ลบผู้ติดต่อ"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleOpenAdd(group.companyName)}
+                      className="shrink-0 text-[11px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                      title="เพิ่มผู้ติดต่อในบริษัทนี้"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>เพิ่มคน</span>
+                    </button>
                   </div>
+                </div>
 
-                  {/* Contact Name & Phone */}
-                  <div className="bg-slate-50 rounded-lg p-3 my-3 space-y-2 border border-slate-200">
-                    <div className="flex items-center gap-2 text-xs text-slate-800 font-semibold">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{c.contactName}</span>
-                    </div>
+                {/* 2. Contacts List inside this Company Frame */}
+                <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
+                  <div className="space-y-2.5">
+                    {group.contacts.map((c) => (
+                      <div
+                        key={c.id}
+                        className="bg-slate-50/90 rounded-lg p-3 border border-slate-200/90 hover:border-blue-200 transition-colors"
+                      >
+                        {/* Person Name & Role & Actions */}
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="font-bold text-xs text-slate-900 truncate">
+                              {c.contactName}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded border font-semibold shrink-0 ${getRoleBadge(c.role)}`}>
+                              {c.role}
+                            </span>
+                          </div>
 
-                    {c.phone && c.phone !== '-' && (
-                      <div className="flex items-center justify-between text-xs">
-                        <a
-                          href={`tel:${cleanPhoneNumber(c.phone)}`}
-                          className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium font-mono hover:underline"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>{formatPhoneNumber(c.phone)}</span>
-                        </a>
-                        <button
-                          onClick={() => handleCopyPhone(cleanPhoneNumber(c.phone))}
-                          className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors text-[11px] flex items-center gap-1 cursor-pointer"
-                          title="คัดลอกเบอร์โทร"
-                        >
-                          {copiedPhone === cleanPhoneNumber(c.phone) ? (
-                            <Check className="w-3 h-3 text-blue-600" />
-                          ) : (
-                            <Copy className="w-3 h-3" />
-                          )}
-                        </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleOpenEdit(c)}
+                              className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-white transition-colors cursor-pointer"
+                              title="แก้ไขข้อมูลผู้ติดต่อนี้"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteContact(c.id, c.contactName, group.companyName)}
+                              className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-white transition-colors cursor-pointer"
+                              title="ลบผู้ติดต่อนี้"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Phone Number with Click-to-Call & Copy */}
+                        {c.phone && c.phone !== '-' ? (
+                          <div className="flex items-center justify-between text-xs bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                            <a
+                              href={`tel:${cleanPhoneNumber(c.phone)}`}
+                              className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-bold font-mono hover:underline"
+                            >
+                              <Phone className="w-3 h-3" />
+                              <span>{formatPhoneNumber(c.phone)}</span>
+                            </a>
+                            <button
+                              onClick={() => handleCopyPhone(c.phone)}
+                              className="text-slate-400 hover:text-slate-700 text-[10px] flex items-center gap-1 cursor-pointer"
+                              title="คัดลอกเบอร์โทร"
+                            >
+                              {copiedPhone === cleanPhoneNumber(c.phone) ? (
+                                <span className="text-blue-600 font-semibold flex items-center gap-0.5">
+                                  <Check className="w-3 h-3" /> คัดลอกแล้ว
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-0.5">
+                                  <Copy className="w-3 h-3" /> คัดลอก
+                                </span>
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400 italic">
+                            ไม่ได้ระบุเบอร์โทรศัพท์
+                          </div>
+                        )}
+
+                        {/* Individual Equipment handled (if contact has specific items) */}
+                        {c.equipmentList && c.equipmentList.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {c.equipmentList.map((eq, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                              >
+                                {eq}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
 
-                  {/* Equipment Managed (Aggregated Tags) */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-500 block">
-                      เครื่องมือแพทย์ที่ดูแล ({c.equipmentList?.length || 0} รายการ):
-                    </span>
-                    {c.equipmentList && c.equipmentList.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {c.equipmentList.map((eq, idx) => (
+                  {/* Company Overall Equipment Handled */}
+                  {group.allEquipments.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <span className="text-[11px] font-bold text-slate-500 block mb-1.5">
+                        เครื่องมือแพทย์ที่ดูแลรวม ({group.allEquipments.length} รายการ):
+                      </span>
+                      <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                        {group.allEquipments.map((eq, idx) => (
                           <span
                             key={idx}
-                            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200 font-medium"
+                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium"
                           >
                             <Tag className="w-2.5 h-2.5 text-blue-600" />
                             <span>{eq}</span>
                           </span>
                         ))}
                       </div>
-                    ) : (
-                      <p className="text-[11px] text-slate-400 italic">ไม่ได้ระบุเครื่องมือเฉพาะ</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Footer: Visit Stats & Departments */}
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                {/* 3. Company Card Footer */}
+                <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
                   <span>
-                    เข้าพบ: <b className="font-mono text-slate-900">{c.visitCount || 1}</b> ครั้ง
+                    เข้าพบรวม: <b className="font-mono text-slate-900">{group.totalVisits}</b> ครั้ง
                   </span>
-                  <span className="truncate max-w-[140px] font-mono" title={c.lastVisit || '-'}>
-                    ล่าสุด: {c.lastVisit?.split(',')[0] || '-'}
+                  <span className="truncate font-mono" title={group.lastVisit}>
+                    ล่าสุด: {group.lastVisit?.split(',')[0] || '-'}
                   </span>
                 </div>
               </div>
@@ -483,7 +574,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
               {editingContact ? 'แก้ไขข้อมูลผู้ติดต่อบริษัท' : 'เพิ่มผู้ติดต่อบริษัทคู่ค้า & ช่าง'}
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              หากผู้ติดต่อดูแลเครื่องมือหลายชิ้น สามารถเพิ่มรายการเครื่องมือต่อท้ายได้ (ระบบจะไม่สร้างรายการซ้ำ)
+              หากเป็นบริษัทเดียวกัน ผู้ติดต่อรายนี้จะถูกจัดกลุ่มเข้าไปอยู่ในกรอบของบริษัทนั้นโดยอัตโนมัติ
             </p>
 
             {formNotice && (

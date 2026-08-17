@@ -193,6 +193,17 @@ export class StorageService {
   }
 
   /**
+   * Rebuild and synchronize company contacts directory directly from all visitor records
+   */
+  static rebuildContactsFromVisitorLogs(records: VisitorRecord[]): CompanyContact[] {
+    const contacts = buildInitialContacts(records).filter(
+      c => !isDummyOrPurged(c.companyName, c.contactName)
+    );
+    this.saveCompanyContacts(contacts);
+    return contacts;
+  }
+
+  /**
    * Smart Sync: If a contact exists with the same company and name:
    * - If they handle new equipment, add it to their equipment list (aggregating multiple machines)
    * - If they already handle that exact equipment, update last visit without duplicating the contact entry!

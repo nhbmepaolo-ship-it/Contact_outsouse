@@ -130,9 +130,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handle Sync from Google Sheets
   const handleSyncGoogleSheet = async () => {
     setIsSyncingSheet(true);
-    setSheetSyncResult('กำลังเชื่อมต่อ Google Sheets...');
+    setSheetSyncResult('กำลังเชื่อมต่อ Google Sheets (Data_base & Visitor_Logs)...');
 
     try {
+      // 1. Sync Master Data (Companies, Departments, Equipment)
       const result = await GoogleSheetsService.fetchMasterDataFromSheet(sheetId, webhookUrl);
 
       if (result.success && (result.departments?.length || result.companies?.length)) {
@@ -145,13 +146,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         if (result.equipments && result.equipments.length > 0) {
           StorageService.saveEquipment(result.equipments);
         }
-        onRefreshData();
-        setSheetSyncResult(`✅ ${result.message}`);
+      }
+
+      // 2. Sync Visitor Logs
+      const logsResult = await GoogleSheetsService.fetchVisitorLogsFromSheet(sheetId);
+
+      onRefreshData();
+
+      if (result.success || logsResult.success) {
+        setSheetSyncResult(`✅ ซิงค์สำเร็จ: ${result.message || ''} | ${logsResult.message || ''}`);
         try {
           confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
         } catch {}
       } else {
-        setSheetSyncResult(result.message || '⚠️ ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบสิทธิ์การแชร์ชีท');
+        setSheetSyncResult(result.message || logsResult.message || '⚠️ ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบสิทธิ์การแชร์ชีท');
       }
     } catch (e: any) {
       setSheetSyncResult(`❌ เกิดข้อผิดพลาด: ${e?.message || 'ไม่สามารถดึงข้อมูลได้'}`);

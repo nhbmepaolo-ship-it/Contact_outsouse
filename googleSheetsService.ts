@@ -747,8 +747,13 @@ export class GoogleSheetsService {
         const fetchUrl = webhookUrl.includes('?') ? `${webhookUrl}&action=all` : `${webhookUrl}?action=all`;
         const res = await fetch(fetchUrl);
         if (res.ok) {
-          const json = await res.json();
-          if (json.status === 'success' && json.data) {
+          const text = await res.text();
+          let json: any = null;
+          try {
+            json = text ? JSON.parse(text) : null;
+          } catch {}
+
+          if (json && json.status === 'success' && json.data) {
             const depts: DepartmentInfo[] = (json.data.departments || []).map((d: any, idx: number) => ({
               id: `dept-gs-${idx + 1}`,
               name: d.name,
@@ -886,6 +891,193 @@ export class GoogleSheetsService {
       return {
         success: false,
         message: `ข้อผิดพลาดในการเชื่อมต่อ Google Sheets: ${e?.message || 'ไม่สามารถเข้าถึงได้'}`,
+      };
+    }
+  }
+
+  /**
+   * Fetch all Visitor Logs directly from the "Visitor_Logs" Google Sheet tab
+   * and synchronize both visitor records and company contacts directory.
+   */
+  static async fetchVisitorLogsFromSheet(sheetIdParam?: string): Promise<{
+    success: boolean;
+    records?: VisitorRecord[];
+    count?: number;
+    message: string;
+  }> {
+    const sheetId = sheetIdParam || this.getSheetId();
+
+    try {
+      const possibleSheetNames = ['Visitor_Logs', 'การตอบแบบฟอร์ม 1', 'Form Responses 1', 'Form responses 1', 'การตอบแบบฟอร์ม'];
+      let foundCsvText = '';
+      let usedSheetName = '';
+
+      for (const name of possibleSheetNames) {
+        try {
+          const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
+          const response = await fetch(url);
+          if (response.ok) {
+            const txt = await response.text();
+            if (!txt.includes('<!DOCTYPE html>') && !txt.includes('google.com/ServiceLogin') && txt.trim().length > 10) {
+              foundCsvText = txt;
+              usedSheetName = name;
+              break;
+            }
+          }
+        } catch {}
+      }
+
+      if (!foundCsvText) {
+        return {
+          success: false,
+          message: 'ไม่สามารถดึงข้อมูลจากชีท "Visitor_Logs" ได้ กรุณาตรวจสอบการแชร์ Google Sheet ให้เป็น "ทุกคนที่มีลิงก์มีสิทธิ์ดู"',
+        };
+      }
+
+      const lines = foundCsvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (lines.length <= 1) {
+        return {
+          success: true,
+          records: [],
+          count: 0,
+          message: `ชีท "${usedSheetName}" ยังไม่มีข้อมูลแถวบันทึก`,
+        };
+      }
+
+      const headers = parseCsvLine(lines[0]);
+      const colMap: Record<string, number> = {
+        timestamp: 0,
+        name: 1,
+        company: 2,
+        role: -1,
+        phone: -1,
+        dept: -1,
+        workType: -1,
+        count: -1,
+        vehicle: -1,
+        plate: -1,
+        eq: -1,
+        notes: -1,
+        id: -1,
+      };
+
+      headers.forEach((hRaw, idx) => {
+        const h = hRaw.toLowerCase().trim();
+        if (h.includes('เวลา') || h.includes('ประทับ') || h.includes('timestamp') || h.includes('date')) {
+          colMap.timestamp = idx;
+        } else if (h.includes('ชื่อ') || h.includes('นามสกุล') || h.includes('name')) {
+          colMap.name = idx;
+        } else if (h.includes('บริษัท') || h.includes('สังกัด') || h.includes('company')) {
+          colMap.company = idx;
+        } else if (h.includes('บทบาท') || h.includes('ตำแหน่ง') || h.includes('role')) {
+          colMap.role = idx;
+        } else if (h.includes('โทร') || h.includes('phone') || h.includes('tel') || h.includes('mobile')) {
+          colMap.phone = idx;
+        } else if (h.includes('แผนก') || h.includes('dept') || h.includes('department')) {
+          colMap.dept = idx;
+        } else if (h.includes('ลักษณะ') || h.includes('งาน') || h.includes('work')) {
+          colMap.workType = idx;
+        } else if (h.includes('จำนวน') || h.includes('คน') || h.includes('count')) {
+          colMap.count = idx;
+        } else if (h.includes('พาหนะ') || h.includes('vehicle')) {
+          colMap.vehicle = idx;
+        } else if (h.includes('ทะเบียน') || h.includes('plate')) {
+          colMap.plate = idx;
+        } else if (h.includes('เครื่องมือ') || h.includes('อุปกรณ์') || h.includes('equipment')) {
+          colMap.eq = idx;
+        } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark')) {
+          colMap.notes = idx;
+        } else if (h.includes('record id') || h.includes('id')) {
+          colMap.id = idx;
+        }
+      });
+
+      // Default standard positions if not explicitly mapped
+      if (colMap.role === -1) colMap.role = 3;
+      if (colMap.phone === -1) colMap.phone = 4;
+      if (colMap.dept === -1) colMap.dept = 5;
+      if (colMap.workType === -1) colMap.workType = 6;
+      if (colMap.count === -1) colMap.count = 7;
+      if (colMap.vehicle === -1) colMap.vehicle = 8;
+      if (colMap.plate === -1) colMap.plate = 9;
+      if (colMap.eq === -1) colMap.eq = 10;
+      if (colMap.notes === -1) colMap.notes = 11;
+      if (colMap.id === -1) colMap.id = 12;
+
+      const parsedRecords: VisitorRecord[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const timestamp = cols[colMap.timestamp]?.trim() || '';
+        const name = cols[colMap.name]?.trim() || '-';
+        const company = cols[colMap.company]?.trim() || '-';
+
+        if (!timestamp && !name && !company) continue;
+
+        const roleRaw = cols[colMap.role]?.trim() || 'ช่าง';
+        const validRole: ContactRole = (['ผู้แทน', 'ช่าง', 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ', 'เจ้าหน้าที่ส่งสินค้า', 'วิศวกรบริการ', 'อื่นๆ'].includes(roleRaw)
+          ? roleRaw
+          : 'ช่าง') as ContactRole;
+
+        const rawPhone = cols[colMap.phone]?.trim() || '-';
+        const formattedPhone = cleanPhoneNumber(rawPhone);
+
+        const dept = cols[colMap.dept]?.trim() || '-';
+        const workType = cols[colMap.workType]?.trim() || '-';
+        const countNum = parseInt(cols[colMap.count]?.trim() || '1', 10) || 1;
+
+        const vehicleRaw = cols[colMap.vehicle]?.trim() || 'รถยนต์ส่วนบุคคล';
+        const validVehicles: VehicleType[] = [
+          'ไม่มีพาหนะ/เดินเท้า',
+          'จักรยานยนต์',
+          'รถยนต์ส่วนบุคคล',
+          'รถบรรทุก 4 ล้อ',
+          'รถบรรทุก 6 ล้อ',
+          'รถบรรทุก 10 ล้อ'
+        ];
+        const validVehicle: VehicleType = validVehicles.find(v => vehicleRaw.includes(v) || v.includes(vehicleRaw)) || 'รถยนต์ส่วนบุคคล';
+
+        const plate = cols[colMap.plate]?.trim() || '-';
+        const eqStr = cols[colMap.eq]?.trim() || '-';
+        const eqList = eqStr && eqStr !== '-' ? eqStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const notes = cols[colMap.notes]?.trim() || '-';
+        const recordId = cols[colMap.id]?.trim() || `sheet-row-${i}`;
+
+        parsedRecords.push({
+          id: recordId,
+          timestamp: timestamp || new Date().toLocaleString('th-TH'),
+          name,
+          company,
+          contactRole: validRole,
+          phone: formattedPhone,
+          department: dept,
+          workType,
+          visitorCount: countNum,
+          vehicleType: validVehicle,
+          licensePlate: plate,
+          equipmentHandled: eqList.length > 0 ? eqList : [eqStr || 'ไม่ระบุ'],
+          notes,
+          createdDate: new Date().toISOString(),
+        });
+      }
+
+      if (parsedRecords.length > 0) {
+        // Save latest records to storage
+        StorageService.saveVisitorRecords(parsedRecords);
+        // Automatically rebuild company contacts directory with all real staff & equipment
+        StorageService.rebuildContactsFromVisitorLogs(parsedRecords);
+      }
+
+      return {
+        success: true,
+        records: parsedRecords,
+        count: parsedRecords.length,
+        message: `ซิงค์ข้อมูลบันทึกผู้เข้าพบจากชีท "${usedSheetName}" สำเร็จทั้งหมด ${parsedRecords.length} รายการ`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `ข้อผิดพลาดในการดึงข้อมูลจากชีท Visitor_Logs: ${err?.message || 'ไม่สามารถติดต่อได้'}`,
       };
     }
   }
