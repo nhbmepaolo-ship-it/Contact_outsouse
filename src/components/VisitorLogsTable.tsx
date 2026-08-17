@@ -21,6 +21,7 @@ import {
 import { VisitorRecord } from '../types';
 import { getDaysRemaining } from '../utils/imageRetention';
 import { sendTelegramNotification, formatVisitorTelegramMessage } from '../services/telegramService';
+import { cleanPhoneNumber, formatPhoneNumber } from '../utils/phoneFormatter';
 
 interface VisitorLogsTableProps {
   records: VisitorRecord[];
@@ -108,7 +109,7 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
       `"${r.timestamp}"`,
       `"${r.name}"`,
       `"${r.company}"`,
-      `"${r.phone}"`,
+      `"${cleanPhoneNumber(r.phone)}"`,
       `"${r.department}"`,
       `"${r.workType}"`,
       r.visitorCount,
@@ -331,10 +332,10 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
                         <div className="font-semibold text-slate-900">{r.company}</div>
                         {r.phone && r.phone !== '-' && (
                           <a
-                            href={`tel:${r.phone}`}
+                            href={`tel:${cleanPhoneNumber(r.phone)}`}
                             className="text-[11px] text-blue-600 hover:underline font-mono"
                           >
-                            {r.phone}
+                            {formatPhoneNumber(r.phone)}
                           </a>
                         )}
                         {r.contactRole && (

@@ -130,9 +130,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handle Sync from Google Sheets
   const handleSyncGoogleSheet = async () => {
     setIsSyncingSheet(true);
-    setSheetSyncResult('กำลังเชื่อมต่อ Google Sheets...');
+    setSheetSyncResult('กำลังเชื่อมต่อ Google Sheets (Data_base & Visitor_Logs)...');
 
     try {
+      // 1. Sync Master Data (Companies, Departments, Equipment)
       const result = await GoogleSheetsService.fetchMasterDataFromSheet(sheetId, webhookUrl);
 
       if (result.success && (result.departments?.length || result.companies?.length)) {
@@ -145,13 +146,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         if (result.equipments && result.equipments.length > 0) {
           StorageService.saveEquipment(result.equipments);
         }
-        onRefreshData();
-        setSheetSyncResult(`✅ ${result.message}`);
+      }
+
+      // 2. Sync Visitor Logs
+      const logsResult = await GoogleSheetsService.fetchVisitorLogsFromSheet(sheetId);
+
+      onRefreshData();
+
+      if (result.success || logsResult.success) {
+        setSheetSyncResult(`✅ ซิงค์สำเร็จ: ${result.message || ''} | ${logsResult.message || ''}`);
         try {
           confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
         } catch {}
       } else {
-        setSheetSyncResult(result.message || '⚠️ ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบสิทธิ์การแชร์ชีท');
+        setSheetSyncResult(result.message || logsResult.message || '⚠️ ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบสิทธิ์การแชร์ชีท');
       }
     } catch (e: any) {
       setSheetSyncResult(`❌ เกิดข้อผิดพลาด: ${e?.message || 'ไม่สามารถดึงข้อมูลได้'}`);
@@ -427,7 +435,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           }`}
         >
           <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Google Sheets (Data_base)</span>
+          <span>Google Sheets</span>
         </button>
 
         <button
@@ -1005,20 +1013,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200">
                 <div className="font-bold text-blue-700 mb-1 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  <span>Data_base ({departments.length} แผนก)</span>
+                  <span>รายชื่อบริษัทและแผนก ({departments.length} แผนก)</span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  คอลัมน์ A: Company (บริษัทคู่สัญญา), คอลัมน์ B: Department (แผนก/หน่วยงาน)
+                  ฐานข้อมูลรายชื่อบริษัทคู่สัญญา และแผนก/หน่วยงานภายในโรงพยาบาล
                 </p>
               </div>
 
               <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200">
                 <div className="font-bold text-indigo-700 mb-1 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                  <span>Data_equpment ({equipmentList.length} เครื่อง)</span>
+                  <span>ฐานข้อมูลเครื่องมือแพทย์ ({equipmentList.length} รายการ)</span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  คอลัมน์ A: Type_Equpment (ประเภท), คอลัมน์ B: Name_Equpment (ชื่อเครื่องมือแพทย์), คอลัมน์ C: Brand (ยี่ห้อ)
+                  ประเภท รายชื่อเครื่องมือแพทย์ และยี่ห้อ พร้อมคำแปลภาษาไทย
                 </p>
               </div>
             </div>
@@ -1088,10 +1096,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 tracking-tight">
                 <Building2 className="w-4 h-4 text-emerald-600" />
-                <span>รายชื่อบริษัทคู่สัญญา (ชีท Data_base คอลัมน์ Company) - {sheetCompanies.length} บริษัท</span>
+                <span>รายชื่อบริษัทคู่สัญญา ({sheetCompanies.length} บริษัท)</span>
               </h3>
               <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                ดึงจากชีท Data_base คอลัมน์ A อัตโนมัติ
+                ดึงข้อมูลอัตโนมัติ
               </span>
             </div>
 
@@ -1126,7 +1134,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 tracking-tight">
                 <Layers className="w-4 h-4 text-blue-600" />
-                <span>รายชื่อแผนกในโรงพยาบาล (ชีท Data_base) - {departments.length} แผนก</span>
+                <span>รายชื่อแผนกในโรงพยาบาล ({departments.length} แผนก)</span>
               </h3>
             </div>
 

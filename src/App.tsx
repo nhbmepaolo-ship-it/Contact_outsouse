@@ -43,6 +43,8 @@ export default function App() {
       try {
         setIsAutoSyncing(true);
         await GoogleSheetsService.initSettings();
+        
+        // 1. Sync master data (Companies, Departments, Equipment)
         const syncResult = await GoogleSheetsService.fetchMasterDataFromSheet();
         if (syncResult.success) {
           if (syncResult.companies && syncResult.companies.length > 0) {
@@ -57,6 +59,12 @@ export default function App() {
             StorageService.saveEquipment(syncResult.equipments);
             setEquipmentList(syncResult.equipments);
           }
+        }
+
+        // 2. Sync all visitor records from Visitor_Logs sheet
+        const logsResult = await GoogleSheetsService.fetchVisitorLogsFromSheet();
+        if (logsResult.success && logsResult.records && logsResult.records.length > 0) {
+          setRecords(logsResult.records);
         }
       } catch (err) {
         console.warn('Background auto-sync notice:', err);

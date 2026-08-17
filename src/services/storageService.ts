@@ -14,6 +14,7 @@ import {
 import { INITIAL_COMPANIES_FROM_SHEET } from '../data/sheetCompanies';
 import { applyImageRetentionPolicy } from '../utils/imageRetention';
 import { DEFAULT_TELEGRAM_CONFIG } from './telegramService';
+import { cleanPhoneNumber } from '../utils/phoneFormatter';
 
 const STORAGE_KEYS = {
   VISITORS: 'bme_visitor_records_v2',
@@ -92,6 +93,7 @@ export class StorageService {
     const id = `vis-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const fullRecord: VisitorRecord = {
       ...newRecord,
+      phone: cleanPhoneNumber(newRecord.phone),
       id,
       createdDate: newRecord.createdDate || new Date().toISOString(),
       isImageExpired: false,
@@ -188,6 +190,17 @@ export class StorageService {
     } catch (e) {
       console.error('Error saving company contacts:', e);
     }
+  }
+
+  /**
+   * Rebuild and synchronize company contacts directory directly from all visitor records
+   */
+  static rebuildContactsFromVisitorLogs(records: VisitorRecord[]): CompanyContact[] {
+    const contacts = buildInitialContacts(records).filter(
+      c => !isDummyOrPurged(c.companyName, c.contactName)
+    );
+    this.saveCompanyContacts(contacts);
+    return contacts;
   }
 
   /**

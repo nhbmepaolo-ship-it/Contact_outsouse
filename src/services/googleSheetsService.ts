@@ -1,6 +1,7 @@
 import { VisitorRecord, DepartmentInfo, EquipmentInfo, ContactRole, VehicleType } from '../types';
 import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 import { StorageService } from './storageService';
+import { cleanPhoneNumber, formatPhoneForGoogleSheets } from '../utils/phoneFormatter';
 
 function parseCsvLine(text: string): string[] {
   const result: string[] = [];
@@ -39,6 +40,7 @@ export const APPS_SCRIPT_TEMPLATE = `/**
  * BME Visitor & Medical Equipment - Google Apps Script (รวมชีท Visitor_Logs)
  * =========================================================================
  * บันทึกข้อมูลเฉพาะชีท "Visitor_Logs" ชีทเดียวเท่านั้น
+ * รักษาเลข 0 นำหน้าของเบอร์โทรศัพท์ครบถ้วน 100%
  * และรองรับการย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" มาใส่ใน "Visitor_Logs"
  * 
  * วิธีติดตั้ง / อัปเดต:
@@ -54,11 +56,26 @@ export const APPS_SCRIPT_TEMPLATE = `/**
  * 7. กด "ทำให้ใช้งานได้" (Deploy) แล้วคัดลอก "URL เว็บแอป" มาใช้งาน
  * 
  * *************************************************************************
- * วิธีย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" มารวมใน "Visitor_Logs":
- * - กดปุ่ม "ย้ายข้อมูลเข้า Visitor_Logs ทันที" จากหน้าเว็บระบบ หรือ
- * - ใน Apps Script เลือกฟังก์ชัน "migrateOldFormDataToVisitorLogs" แล้วกด "เรียกใช้" (Run)
+ * วิธีเติมเลข 0 นำหน้าเบอร์โทรทั้งหมดในชีท Visitor_Logs:
+ * - ใน Apps Script เลือกฟังก์ชัน "fixAllPhoneNumbersInVisitorLogs" แล้วกด "เรียกใช้" (Run)
  * *************************************************************************
  */
+
+function cleanPhoneForSheet(rawPhone) {
+  if (!rawPhone) return "-";
+  var s = String(rawPhone).trim().replace(/^'+/, '');
+  if (!s || s === "-" || s === "undefined" || s === "null") return "-";
+  
+  var clean = s.replace(/[^\\d+]/g, '');
+  if (clean.indexOf("+66") === 0) clean = "0" + clean.substring(3);
+  else if (clean.indexOf("66") === 0 && clean.length >= 10) clean = "0" + clean.substring(2);
+  else if (clean.length === 9 && ["6","8","9","2","3","4","5","7"].indexOf(clean.charAt(0)) !== -1) {
+    clean = "0" + clean;
+  } else if (clean.length === 8 && clean.charAt(0) === "2") {
+    clean = "0" + clean;
+  }
+  return clean ? "'" + clean : "-";
+}
 
 function doPost(e) {
   try {
@@ -84,14 +101,23 @@ function doPost(e) {
         "หมายเหตุ",
         "Record ID"
       ]);
-      // ปรับรูปแบบหัวตารางให้สวยงาม
+      // ปรับรูปแบบหัวตารางให้สวยงาม และตั้งค่าคอลัมน์เบอร์โทรเป็นข้อความ
       sheet.getRange("A1:M1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
+      sheet.getRange("E:E").setNumberFormat("@");
       sheet.setFrozenRows(1);
     }
     
     var rawContents = e.postData ? e.postData.contents : "{}";
     var data = JSON.parse(rawContents);
     
+    // หากเป็นการสั่งปรับแก้เบอร์โทรศัพท์ทั้งหมดในชีท
+    if (data && (data.action === "fixPhones" || data.action === "fixAllPhones")) {
+      var fixMsg = fixAllPhoneNumbersInVisitorLogs();
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "success", message: fixMsg }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     // หากเป็นการสั่งย้ายข้อมูลจากระบบ
     if (data && (data.action === "migrate" || data.action === "migrateOldFormData")) {
       var migMsg = migrateOldFormDataToVisitorLogs();
@@ -112,7 +138,7 @@ function doPost(e) {
       var name = item.name || "-";
       var company = item.company || "-";
       var role = item.contactRole || item.role || "ช่าง";
-      var phone = item.phone || "-";
+      var phone = cleanPhoneForSheet(item.phone);
       var department = item.department || "-";
       var workType = item.workType || "-";
       var visitorCount = item.visitorCount || 1;
@@ -141,6 +167,7 @@ function doPost(e) {
     
     if (rowsToAppend.length > 0) {
       sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, 13).setValues(rowsToAppend);
+      sheet.getRange("E:E").setNumberFormat("@");
     }
     
     return ContentService
@@ -156,6 +183,35 @@ function doPost(e) {
       .createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+/**
+ * ปรับแก้เบอร์โทรศัพท์ทุกแถวใน Visitor_Logs ให้มีเลข 0 นำหน้าครบถ้วน 100%
+ */
+function fixAllPhoneNumbersInVisitorLogs() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Visitor_Logs");
+  if (!sheet) return "ไม่พบชีท Visitor_Logs";
+  
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return "ไม่มีข้อมูลในชีท Visitor_Logs";
+  
+  var range = sheet.getRange(2, 5, lastRow - 1, 1);
+  var values = range.getValues();
+  var updatedCount = 0;
+  
+  for (var i = 0; i < values.length; i++) {
+    var raw = values[i][0];
+    var formatted = cleanPhoneForSheet(raw);
+    if (formatted !== "-" && formatted !== raw) {
+      values[i][0] = formatted;
+      updatedCount++;
+    }
+  }
+  
+  range.setNumberFormat("@");
+  range.setValues(values);
+  return "ปรับปรุงเบอร์โทรศัพท์ในชีท Visitor_Logs สำเร็จแล้ว " + updatedCount + " รายการ (มีเลข 0 นำหน้าครบถ้วน)";
 }
 
 /**
@@ -184,6 +240,7 @@ function migrateOldFormDataToVisitorLogs() {
       "Record ID"
     ]);
     targetSheet.getRange("A1:M1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
+    targetSheet.getRange("E:E").setNumberFormat("@");
     targetSheet.setFrozenRows(1);
   }
   
@@ -296,7 +353,7 @@ function migrateOldFormDataToVisitorLogs() {
     
     if (!existingKeys[key]) {
       var role = colMap.role !== -1 && row[colMap.role] ? String(row[colMap.role]).trim() : "ช่าง";
-      var phone = colMap.phone !== -1 && row[colMap.phone] ? String(row[colMap.phone]).trim() : "-";
+      var phone = colMap.phone !== -1 && row[colMap.phone] ? cleanPhoneForSheet(row[colMap.phone]) : "-";
       var dept = colMap.dept !== -1 && row[colMap.dept] ? String(row[colMap.dept]).trim() : "-";
       var workType = colMap.workType !== -1 && row[colMap.workType] ? String(row[colMap.workType]).trim() : "-";
       var count = colMap.count !== -1 && row[colMap.count] ? Number(row[colMap.count]) || 1 : 1;
@@ -327,6 +384,7 @@ function migrateOldFormDataToVisitorLogs() {
   
   if (rowsToAdd.length > 0) {
     targetSheet.getRange(targetSheet.getLastRow() + 1, 1, rowsToAdd.length, 13).setValues(rowsToAdd);
+    targetSheet.getRange("E:E").setNumberFormat("@");
     var msg = "ย้ายข้อมูลจาก 'การตอบแบบฟอร์ม 1' เข้าสู่ 'Visitor_Logs' สำเร็จแล้ว " + rowsToAdd.length + " รายการ";
     Logger.log(msg);
     return msg;
@@ -343,6 +401,12 @@ function doGet(e) {
     
     // ตรวจสอบ action พิเศษ
     if (e && e.parameter) {
+      if (e.parameter.action === "fixPhones" || e.parameter.action === "fixAllPhones") {
+        var fixMsg = fixAllPhoneNumbersInVisitorLogs();
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: "success", message: fixMsg }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
       if (e.parameter.action === "migrate" || e.parameter.action === "migrateOldFormData") {
         var migMsg = migrateOldFormDataToVisitorLogs();
         return ContentService
@@ -504,7 +568,7 @@ export class GoogleSheetsService {
 
   /**
    * Sends visitor checkin record directly to Google Apps Script Web App (Visitor_Logs)
-   * Uses server proxy to prevent CORS issues and guarantee delivery.
+   * Uses server proxy with automatic client-side fallback to prevent CORS and JSON issues.
    */
   static async sendRecordToGoogleSheet(record: VisitorRecord): Promise<{ success: boolean; message: string }> {
     const webhookUrl = this.getWebhookUrl();
@@ -518,7 +582,7 @@ export class GoogleSheetsService {
       timestamp: record.timestamp,
       name: record.name,
       company: record.company,
-      phone: record.phone,
+      phone: formatPhoneForGoogleSheets(record.phone),
       department: record.department,
       workType: record.workType,
       visitorCount: record.visitorCount,
@@ -529,22 +593,28 @@ export class GoogleSheetsService {
       notes: record.notes,
     };
 
+    // 1. Try server proxy first
     try {
-      // 1. Send via server proxy endpoint for reliable execution
       const serverRes = await fetch('/api/sheets/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
-      if (serverRes.ok) {
+      const txt = await serverRes.text();
+      let data: any = null;
+      try {
+        data = txt ? JSON.parse(txt) : null;
+      } catch {}
+
+      if (serverRes.ok && (!data || data.success !== false)) {
         return {
           success: true,
           message: 'บันทึกข้อมูลเข้าชีท Visitor_Logs เรียบร้อยแล้ว',
         };
       }
     } catch (serverErr) {
-      console.warn('Server proxy send failed, falling back to direct client post:', serverErr);
+      console.warn('Server proxy send failed, trying direct client post:', serverErr);
     }
 
     // 2. Direct client fallback (no-cors)
@@ -581,46 +651,80 @@ export class GoogleSheetsService {
       return { success: false, message: 'ไม่มีข้อมูลรายการที่จะซิงค์' };
     }
 
+    const payloadRecords = records.map(r => ({
+      id: r.id,
+      timestamp: r.timestamp,
+      name: r.name,
+      company: r.company,
+      phone: formatPhoneForGoogleSheets(r.phone),
+      department: r.department,
+      workType: r.workType,
+      visitorCount: r.visitorCount,
+      vehicleType: r.vehicleType,
+      licensePlate: r.licensePlate,
+      equipmentHandled: r.equipmentHandled,
+      contactRole: r.contactRole,
+      notes: r.notes
+    }));
+
+    // 1. Try server proxy endpoint
+    let serverSuccess = false;
     try {
       const res = await fetch('/api/sheets/batch-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           webhookUrl,
-          records: records.map(r => ({
-            id: r.id,
-            timestamp: r.timestamp,
-            name: r.name,
-            company: r.company,
-            phone: r.phone,
-            department: r.department,
-            workType: r.workType,
-            visitorCount: r.visitorCount,
-            vehicleType: r.vehicleType,
-            licensePlate: r.licensePlate,
-            equipmentHandled: r.equipmentHandled,
-            contactRole: r.contactRole,
-            notes: r.notes
-          }))
+          records: payloadRecords
         })
       });
 
-      const data = await res.json();
-      if (data.success) {
+      const responseText = await res.text();
+      let data: any = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch {}
+
+      if (res.ok && data && data.success) {
+        serverSuccess = true;
         return {
           success: true,
           count: records.length,
           message: `ซิงค์ประวัติผู้มาติดต่อ ${records.length} รายการ เข้าชีท "Visitor_Logs" สำเร็จสมบูรณ์!`
         };
-      } else {
-        throw new Error(data.error || 'Sync failed');
       }
-    } catch (err: any) {
-      return {
-        success: false,
-        message: `ซิงค์ไม่สำเร็จ: ${err.message}`
-      };
+    } catch (proxyErr) {
+      console.warn('Batch sync server proxy failed, trying direct post fallback:', proxyErr);
     }
+
+    // 2. Direct browser fallback (no-cors)
+    if (!serverSuccess) {
+      try {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payloadRecords),
+        });
+
+        return {
+          success: true,
+          count: records.length,
+          message: `ส่งคำสั่งซิงค์ข้อมูล ${records.length} รายการ เข้าชีท "Visitor_Logs" เรียบร้อยแล้ว!`
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          message: `ซิงค์ไม่สำเร็จ: ${err?.message || 'เครือข่ายขัดข้อง'}`
+        };
+      }
+    }
+
+    return {
+      success: true,
+      count: records.length,
+      message: `ซิงค์ข้อมูล ${records.length} รายการ เข้าชีท "Visitor_Logs" เรียบร้อยแล้ว`
+    };
   }
 
   /**
@@ -643,8 +747,13 @@ export class GoogleSheetsService {
         const fetchUrl = webhookUrl.includes('?') ? `${webhookUrl}&action=all` : `${webhookUrl}?action=all`;
         const res = await fetch(fetchUrl);
         if (res.ok) {
-          const json = await res.json();
-          if (json.status === 'success' && json.data) {
+          const text = await res.text();
+          let json: any = null;
+          try {
+            json = text ? JSON.parse(text) : null;
+          } catch {}
+
+          if (json && json.status === 'success' && json.data) {
             const depts: DepartmentInfo[] = (json.data.departments || []).map((d: any, idx: number) => ({
               id: `dept-gs-${idx + 1}`,
               name: d.name,
@@ -787,6 +896,193 @@ export class GoogleSheetsService {
   }
 
   /**
+   * Fetch all Visitor Logs directly from the "Visitor_Logs" Google Sheet tab
+   * and synchronize both visitor records and company contacts directory.
+   */
+  static async fetchVisitorLogsFromSheet(sheetIdParam?: string): Promise<{
+    success: boolean;
+    records?: VisitorRecord[];
+    count?: number;
+    message: string;
+  }> {
+    const sheetId = sheetIdParam || this.getSheetId();
+
+    try {
+      const possibleSheetNames = ['Visitor_Logs', 'การตอบแบบฟอร์ม 1', 'Form Responses 1', 'Form responses 1', 'การตอบแบบฟอร์ม'];
+      let foundCsvText = '';
+      let usedSheetName = '';
+
+      for (const name of possibleSheetNames) {
+        try {
+          const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
+          const response = await fetch(url);
+          if (response.ok) {
+            const txt = await response.text();
+            if (!txt.includes('<!DOCTYPE html>') && !txt.includes('google.com/ServiceLogin') && txt.trim().length > 10) {
+              foundCsvText = txt;
+              usedSheetName = name;
+              break;
+            }
+          }
+        } catch {}
+      }
+
+      if (!foundCsvText) {
+        return {
+          success: false,
+          message: 'ไม่สามารถดึงข้อมูลจากชีท "Visitor_Logs" ได้ กรุณาตรวจสอบการแชร์ Google Sheet ให้เป็น "ทุกคนที่มีลิงก์มีสิทธิ์ดู"',
+        };
+      }
+
+      const lines = foundCsvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (lines.length <= 1) {
+        return {
+          success: true,
+          records: [],
+          count: 0,
+          message: `ชีท "${usedSheetName}" ยังไม่มีข้อมูลแถวบันทึก`,
+        };
+      }
+
+      const headers = parseCsvLine(lines[0]);
+      const colMap: Record<string, number> = {
+        timestamp: 0,
+        name: 1,
+        company: 2,
+        role: -1,
+        phone: -1,
+        dept: -1,
+        workType: -1,
+        count: -1,
+        vehicle: -1,
+        plate: -1,
+        eq: -1,
+        notes: -1,
+        id: -1,
+      };
+
+      headers.forEach((hRaw, idx) => {
+        const h = hRaw.toLowerCase().trim();
+        if (h.includes('เวลา') || h.includes('ประทับ') || h.includes('timestamp') || h.includes('date')) {
+          colMap.timestamp = idx;
+        } else if (h.includes('ชื่อ') || h.includes('นามสกุล') || h.includes('name')) {
+          colMap.name = idx;
+        } else if (h.includes('บริษัท') || h.includes('สังกัด') || h.includes('company')) {
+          colMap.company = idx;
+        } else if (h.includes('บทบาท') || h.includes('ตำแหน่ง') || h.includes('role')) {
+          colMap.role = idx;
+        } else if (h.includes('โทร') || h.includes('phone') || h.includes('tel') || h.includes('mobile')) {
+          colMap.phone = idx;
+        } else if (h.includes('แผนก') || h.includes('dept') || h.includes('department')) {
+          colMap.dept = idx;
+        } else if (h.includes('ลักษณะ') || h.includes('งาน') || h.includes('work')) {
+          colMap.workType = idx;
+        } else if (h.includes('จำนวน') || h.includes('คน') || h.includes('count')) {
+          colMap.count = idx;
+        } else if (h.includes('พาหนะ') || h.includes('vehicle')) {
+          colMap.vehicle = idx;
+        } else if (h.includes('ทะเบียน') || h.includes('plate')) {
+          colMap.plate = idx;
+        } else if (h.includes('เครื่องมือ') || h.includes('อุปกรณ์') || h.includes('equipment')) {
+          colMap.eq = idx;
+        } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark')) {
+          colMap.notes = idx;
+        } else if (h.includes('record id') || h.includes('id')) {
+          colMap.id = idx;
+        }
+      });
+
+      // Default standard positions if not explicitly mapped
+      if (colMap.role === -1) colMap.role = 3;
+      if (colMap.phone === -1) colMap.phone = 4;
+      if (colMap.dept === -1) colMap.dept = 5;
+      if (colMap.workType === -1) colMap.workType = 6;
+      if (colMap.count === -1) colMap.count = 7;
+      if (colMap.vehicle === -1) colMap.vehicle = 8;
+      if (colMap.plate === -1) colMap.plate = 9;
+      if (colMap.eq === -1) colMap.eq = 10;
+      if (colMap.notes === -1) colMap.notes = 11;
+      if (colMap.id === -1) colMap.id = 12;
+
+      const parsedRecords: VisitorRecord[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const timestamp = cols[colMap.timestamp]?.trim() || '';
+        const name = cols[colMap.name]?.trim() || '-';
+        const company = cols[colMap.company]?.trim() || '-';
+
+        if (!timestamp && !name && !company) continue;
+
+        const roleRaw = cols[colMap.role]?.trim() || 'ช่าง';
+        const validRole: ContactRole = (['ผู้แทน', 'ช่าง', 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ', 'เจ้าหน้าที่ส่งสินค้า', 'วิศวกรบริการ', 'อื่นๆ'].includes(roleRaw)
+          ? roleRaw
+          : 'ช่าง') as ContactRole;
+
+        const rawPhone = cols[colMap.phone]?.trim() || '-';
+        const formattedPhone = cleanPhoneNumber(rawPhone);
+
+        const dept = cols[colMap.dept]?.trim() || '-';
+        const workType = cols[colMap.workType]?.trim() || '-';
+        const countNum = parseInt(cols[colMap.count]?.trim() || '1', 10) || 1;
+
+        const vehicleRaw = cols[colMap.vehicle]?.trim() || 'รถยนต์ส่วนบุคคล';
+        const validVehicles: VehicleType[] = [
+          'ไม่มีพาหนะ/เดินเท้า',
+          'จักรยานยนต์',
+          'รถยนต์ส่วนบุคคล',
+          'รถบรรทุก 4 ล้อ',
+          'รถบรรทุก 6 ล้อ',
+          'รถบรรทุก 10 ล้อ'
+        ];
+        const validVehicle: VehicleType = validVehicles.find(v => vehicleRaw.includes(v) || v.includes(vehicleRaw)) || 'รถยนต์ส่วนบุคคล';
+
+        const plate = cols[colMap.plate]?.trim() || '-';
+        const eqStr = cols[colMap.eq]?.trim() || '-';
+        const eqList = eqStr && eqStr !== '-' ? eqStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const notes = cols[colMap.notes]?.trim() || '-';
+        const recordId = cols[colMap.id]?.trim() || `sheet-row-${i}`;
+
+        parsedRecords.push({
+          id: recordId,
+          timestamp: timestamp || new Date().toLocaleString('th-TH'),
+          name,
+          company,
+          contactRole: validRole,
+          phone: formattedPhone,
+          department: dept,
+          workType,
+          visitorCount: countNum,
+          vehicleType: validVehicle,
+          licensePlate: plate,
+          equipmentHandled: eqList.length > 0 ? eqList : [eqStr || 'ไม่ระบุ'],
+          notes,
+          createdDate: new Date().toISOString(),
+        });
+      }
+
+      if (parsedRecords.length > 0) {
+        // Save latest records to storage
+        StorageService.saveVisitorRecords(parsedRecords);
+        // Automatically rebuild company contacts directory with all real staff & equipment
+        StorageService.rebuildContactsFromVisitorLogs(parsedRecords);
+      }
+
+      return {
+        success: true,
+        records: parsedRecords,
+        count: parsedRecords.length,
+        message: `ซิงค์ข้อมูลบันทึกผู้เข้าพบจากชีท "${usedSheetName}" สำเร็จทั้งหมด ${parsedRecords.length} รายการ`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `ข้อผิดพลาดในการดึงข้อมูลจากชีท Visitor_Logs: ${err?.message || 'ไม่สามารถติดต่อได้'}`,
+      };
+    }
+  }
+
+  /**
    * Test Webhook Connection
    */
   static async testWebhook(url: string): Promise<{ success: boolean; message: string }> {
@@ -845,22 +1141,25 @@ export class GoogleSheetsService {
     const sheetId = sheetIdParam || this.getSheetId();
     const webhookUrl = webhookUrlParam || this.getWebhookUrl();
 
-    // 1. ลองสั่งรันผ่าน Apps Script Webhook
+    // 1. ลองสั่งรันผ่าน Apps Script Webhook ผ่าน backend proxy หรือ direct
     if (webhookUrl && webhookUrl.startsWith('https://script.google.com/macros/s/')) {
       try {
-        const res = await fetch(webhookUrl, {
+        const res = await fetch('/api/sheets/migrate', {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'migrate' }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ webhookUrl }),
         });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.status === 'success' || json.message) {
-            return {
-              success: true,
-              message: json.message || 'ย้ายข้อมูลเข้าชีท Visitor_Logs สำเร็จแล้ว',
-            };
-          }
+        const txt = await res.text();
+        let json: any = null;
+        try {
+          json = txt ? JSON.parse(txt) : null;
+        } catch {}
+
+        if (res.ok && json && (json.success || json.data?.status === 'success' || json.data?.message)) {
+          return {
+            success: true,
+            message: json.data?.message || json.message || 'ย้ายข้อมูลเข้าชีท Visitor_Logs สำเร็จแล้ว',
+          };
         }
       } catch (e) {
         console.warn('Apps script direct migration call failed, running CSV migration fallback:', e);
