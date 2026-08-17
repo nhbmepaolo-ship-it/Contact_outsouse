@@ -1,4 +1,5 @@
 import { CompanyContact } from '../types';
+import { StorageService } from '../services/storageService';
 
 /**
  * Known aliases / synonym mappings between English & Thai company names
@@ -183,6 +184,7 @@ export interface GroupedCompany {
   id: string;
   companyKey: string;
   companyName: string;
+  companyEnglishName?: string;
   aliases: string[];
   contacts: CompanyContact[];
   allEquipments: string[];
@@ -205,11 +207,13 @@ export function groupContactsByCompany(contacts: CompanyContact[]): GroupedCompa
 
     if (!map.has(key)) {
       const canonicalName = getCanonicalCompanyName(rawComp);
+      const enName = StorageService.getCompanyEnglishName(rawComp) || StorageService.getCompanyEnglishName(canonicalName) || undefined;
       const safeId = `grp-${key ? encodeURIComponent(key).slice(0, 40) : 'unknown'}-${groupCounter++}`;
       map.set(key, {
         id: safeId,
         companyKey: key,
         companyName: canonicalName,
+        companyEnglishName: enName,
         aliases: [rawComp],
         contacts: [c],
         allEquipments: [...(c.equipmentList || [])],
@@ -219,6 +223,14 @@ export function groupContactsByCompany(contacts: CompanyContact[]): GroupedCompa
       });
     } else {
       const group = map.get(key)!;
+
+      // Check if we can find English name if missing
+      if (!group.companyEnglishName) {
+        const foundEn = StorageService.getCompanyEnglishName(rawComp);
+        if (foundEn) {
+          group.companyEnglishName = foundEn;
+        }
+      }
 
       // Add alias if different
       if (!group.aliases.includes(rawComp)) {

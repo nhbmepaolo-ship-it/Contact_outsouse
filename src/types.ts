@@ -28,6 +28,7 @@ export interface VisitorRecord {
   licensePlate: string;
   equipmentHandled: string[];
   contactRole?: ContactRole;
+  workDetails?: string;
   notes?: string;
   createdDate: string; // ISO string or timestamp
   isImageExpired?: boolean;

@@ -94,15 +94,17 @@ function doPost(e) {
         "เบอร์โทรศัพท์",
         "แผนกที่เข้าติดต่อ",
         "ลักษณะงาน",
+        "รายละเอียดงาน",
         "จำนวนผู้เข้าพบ",
         "ประเภทพาหนะ",
         "ทะเบียนรถ",
         "เครื่องมือแพทย์ที่ดูแล",
         "หมายเหตุ",
+        "ลิงก์/สถานะรูปบัตร",
         "Record ID"
       ]);
       // ปรับรูปแบบหัวตารางให้สวยงาม และตั้งค่าคอลัมน์เบอร์โทรเป็นข้อความ
-      sheet.getRange("A1:M1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
+      sheet.getRange("A1:O1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
       sheet.getRange("E:E").setNumberFormat("@");
       sheet.setFrozenRows(1);
     }
@@ -141,11 +143,13 @@ function doPost(e) {
       var phone = cleanPhoneForSheet(item.phone);
       var department = item.department || "-";
       var workType = item.workType || "-";
+      var workDetails = item.workDetails || "-";
       var visitorCount = item.visitorCount || 1;
       var vehicleType = item.vehicleType || "รถยนต์ส่วนบุคคล";
       var licensePlate = item.licensePlate || "-";
       var equipmentList = Array.isArray(item.equipmentHandled) ? item.equipmentHandled.join(", ") : (item.equipmentHandled || "-");
       var notes = item.notes || "-";
+      var cardImageUrl = item.cardImageUrl ? (item.cardImageUrl.indexOf("http") === 0 ? item.cardImageUrl : "[รูปแนบในระบบ]") : "-";
       var recordId = item.id || "vis-" + Date.now() + "-" + i;
       
       rowsToAppend.push([
@@ -156,17 +160,19 @@ function doPost(e) {
         phone,
         department,
         workType,
+        workDetails,
         visitorCount,
         vehicleType,
         licensePlate,
         equipmentList,
         notes,
+        cardImageUrl,
         recordId
       ]);
     }
     
     if (rowsToAppend.length > 0) {
-      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, 13).setValues(rowsToAppend);
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, 15).setValues(rowsToAppend);
       sheet.getRange("E:E").setNumberFormat("@");
     }
     
@@ -232,14 +238,16 @@ function migrateOldFormDataToVisitorLogs() {
       "เบอร์โทรศัพท์",
       "แผนกที่เข้าติดต่อ",
       "ลักษณะงาน",
+      "รายละเอียดงาน",
       "จำนวนผู้เข้าพบ",
       "ประเภทพาหนะ",
       "ทะเบียนรถ",
       "เครื่องมือแพทย์ที่ดูแล",
       "หมายเหตุ",
+      "ลิงก์/สถานะรูปบัตร",
       "Record ID"
     ]);
-    targetSheet.getRange("A1:M1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
+    targetSheet.getRange("A1:O1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
     targetSheet.getRange("E:E").setNumberFormat("@");
     targetSheet.setFrozenRows(1);
   }
@@ -282,11 +290,13 @@ function migrateOldFormDataToVisitorLogs() {
     phone: -1,
     dept: -1,
     workType: -1,
+    workDetails: -1,
     count: -1,
     vehicle: -1,
     plate: -1,
     eq: -1,
-    notes: -1
+    notes: -1,
+    cardImage: -1
   };
   
   for (var c = 0; c < headers.length; c++) {
@@ -303,6 +313,8 @@ function migrateOldFormDataToVisitorLogs() {
       colMap.phone = c;
     } else if (h.indexOf("แผนก") !== -1 || h.indexOf("dept") !== -1 || h.indexOf("department") !== -1) {
       colMap.dept = c;
+    } else if (h.indexOf("รายละเอียดงาน") !== -1 || h.indexOf("work detail") !== -1) {
+      colMap.workDetails = c;
     } else if (h.indexOf("ลักษณะ") !== -1 || h.indexOf("งาน") !== -1 || h.indexOf("work") !== -1) {
       colMap.workType = c;
     } else if (h.indexOf("จำนวน") !== -1 || h.indexOf("คน") !== -1 || h.indexOf("count") !== -1) {
@@ -315,6 +327,8 @@ function migrateOldFormDataToVisitorLogs() {
       colMap.eq = c;
     } else if (h.indexOf("หมายเหตุ") !== -1 || h.indexOf("note") !== -1 || h.indexOf("remark") !== -1) {
       colMap.notes = c;
+    } else if (h.indexOf("รูป") !== -1 || h.indexOf("บัตร") !== -1 || h.indexOf("image") !== -1 || h.indexOf("photo") !== -1) {
+      colMap.cardImage = c;
     }
   }
   
@@ -323,11 +337,13 @@ function migrateOldFormDataToVisitorLogs() {
   if (colMap.phone === -1) colMap.phone = 4;
   if (colMap.dept === -1) colMap.dept = 5;
   if (colMap.workType === -1) colMap.workType = 6;
-  if (colMap.count === -1) colMap.count = 7;
-  if (colMap.vehicle === -1) colMap.vehicle = 8;
-  if (colMap.plate === -1) colMap.plate = 9;
-  if (colMap.eq === -1) colMap.eq = 10;
-  if (colMap.notes === -1) colMap.notes = 11;
+  if (colMap.workDetails === -1) colMap.workDetails = 7;
+  if (colMap.count === -1) colMap.count = 8;
+  if (colMap.vehicle === -1) colMap.vehicle = 9;
+  if (colMap.plate === -1) colMap.plate = 10;
+  if (colMap.eq === -1) colMap.eq = 11;
+  if (colMap.notes === -1) colMap.notes = 12;
+  if (colMap.cardImage === -1) colMap.cardImage = 13;
   
   // ดึงข้อมูลเดิมใน Visitor_Logs เพื่อป้องกันการบันทึกซ้ำ
   var existingData = targetSheet.getDataRange().getValues();
@@ -356,11 +372,13 @@ function migrateOldFormDataToVisitorLogs() {
       var phone = colMap.phone !== -1 && row[colMap.phone] ? cleanPhoneForSheet(row[colMap.phone]) : "-";
       var dept = colMap.dept !== -1 && row[colMap.dept] ? String(row[colMap.dept]).trim() : "-";
       var workType = colMap.workType !== -1 && row[colMap.workType] ? String(row[colMap.workType]).trim() : "-";
+      var workDetails = colMap.workDetails !== -1 && row[colMap.workDetails] ? String(row[colMap.workDetails]).trim() : "-";
       var count = colMap.count !== -1 && row[colMap.count] ? Number(row[colMap.count]) || 1 : 1;
       var vehicle = colMap.vehicle !== -1 && row[colMap.vehicle] ? String(row[colMap.vehicle]).trim() : "รถยนต์ส่วนบุคคล";
       var plate = colMap.plate !== -1 && row[colMap.plate] ? String(row[colMap.plate]).trim() : "-";
       var eq = colMap.eq !== -1 && row[colMap.eq] ? String(row[colMap.eq]).trim() : "-";
       var notes = colMap.notes !== -1 && row[colMap.notes] ? String(row[colMap.notes]).trim() : "-";
+      var cardImageUrl = colMap.cardImage !== -1 && row[colMap.cardImage] ? String(row[colMap.cardImage]).trim() : "-";
       var id = "vis-migrated-" + r + "-" + Date.now();
       
       rowsToAdd.push([
@@ -371,11 +389,13 @@ function migrateOldFormDataToVisitorLogs() {
         phone,
         dept,
         workType,
+        workDetails,
         count,
         vehicle,
         plate,
         eq,
         notes,
+        cardImageUrl,
         id
       ]);
       existingKeys[key] = true;
@@ -383,7 +403,7 @@ function migrateOldFormDataToVisitorLogs() {
   }
   
   if (rowsToAdd.length > 0) {
-    targetSheet.getRange(targetSheet.getLastRow() + 1, 1, rowsToAdd.length, 13).setValues(rowsToAdd);
+    targetSheet.getRange(targetSheet.getLastRow() + 1, 1, rowsToAdd.length, 15).setValues(rowsToAdd);
     targetSheet.getRange("E:E").setNumberFormat("@");
     var msg = "ย้ายข้อมูลจาก 'การตอบแบบฟอร์ม 1' เข้าสู่ 'Visitor_Logs' สำเร็จแล้ว " + rowsToAdd.length + " รายการ";
     Logger.log(msg);
@@ -585,12 +605,14 @@ export class GoogleSheetsService {
       phone: formatPhoneForGoogleSheets(record.phone),
       department: record.department,
       workType: record.workType,
+      workDetails: record.workDetails,
       visitorCount: record.visitorCount,
       vehicleType: record.vehicleType,
       licensePlate: record.licensePlate,
       equipmentHandled: record.equipmentHandled,
       contactRole: record.contactRole,
       notes: record.notes,
+      cardImageUrl: record.cardImageUrl,
     };
 
     // 1. Try server proxy first
@@ -659,12 +681,14 @@ export class GoogleSheetsService {
       phone: formatPhoneForGoogleSheets(r.phone),
       department: r.department,
       workType: r.workType,
+      workDetails: r.workDetails,
       visitorCount: r.visitorCount,
       vehicleType: r.vehicleType,
       licensePlate: r.licensePlate,
       equipmentHandled: r.equipmentHandled,
       contactRole: r.contactRole,
-      notes: r.notes
+      notes: r.notes,
+      cardImageUrl: r.cardImageUrl,
     }));
 
     // 1. Try server proxy endpoint
@@ -813,8 +837,10 @@ export class GoogleSheetsService {
         // Parse CSV lines for Data_base
         // 1. บริษัท: คอลัมน์ A (Company)
         // 2. แผนก: คอลัมน์ B (Department)
+        // 3. ชื่อบริษัทภาษาอังกฤษ: คอลัมน์ C (Company_EN)
         const parsedDepts: DepartmentInfo[] = [];
         const parsedCompanies: string[] = [];
+        const parsedCompanyEnMap: Record<string, string> = {};
         const seenDeptNames = new Set<string>();
         const seenCompanies = new Set<string>();
 
@@ -822,11 +848,17 @@ export class GoogleSheetsService {
           const cols = parseCsvLine(linesBase[i]);
           const companyColA = cols[0]?.trim() || '';
           const departmentColB = cols[1]?.trim() || '';
+          const companyEnColC = cols[2]?.trim() || '';
 
           // บริษัท เอาค่าในชีท Data_base คอลัมน์ A (Company) เท่านั้น
           if (companyColA && !seenCompanies.has(companyColA.toLowerCase())) {
             seenCompanies.add(companyColA.toLowerCase());
             parsedCompanies.push(companyColA);
+          }
+
+          // ชื่อภาษาอังกฤษ คอลัมน์ C (Company_EN)
+          if (companyColA && companyEnColC) {
+            parsedCompanyEnMap[companyColA] = companyEnColC;
           }
 
           // แผนก เอาค่าในชีท Data_base คอลัมน์ B (Department) เท่านั้น
@@ -839,6 +871,10 @@ export class GoogleSheetsService {
               category: 'Hospital Unit',
             });
           }
+        }
+
+        if (Object.keys(parsedCompanyEnMap).length > 0) {
+          StorageService.saveCompanyEnglishMap(parsedCompanyEnMap);
         }
 
         const parsedEqs: EquipmentInfo[] = [];
@@ -953,11 +989,13 @@ export class GoogleSheetsService {
         phone: -1,
         dept: -1,
         workType: -1,
+        workDetails: -1,
         count: -1,
         vehicle: -1,
         plate: -1,
         eq: -1,
         notes: -1,
+        cardImage: -1,
         id: -1,
       };
 
@@ -975,6 +1013,8 @@ export class GoogleSheetsService {
           colMap.phone = idx;
         } else if (h.includes('แผนก') || h.includes('dept') || h.includes('department')) {
           colMap.dept = idx;
+        } else if (h.includes('รายละเอียดงาน') || h.includes('detail') || h.includes('work detail') || h.includes('workdetail')) {
+          colMap.workDetails = idx;
         } else if (h.includes('ลักษณะ') || h.includes('งาน') || h.includes('work')) {
           colMap.workType = idx;
         } else if (h.includes('จำนวน') || h.includes('คน') || h.includes('count')) {
@@ -987,6 +1027,8 @@ export class GoogleSheetsService {
           colMap.eq = idx;
         } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark')) {
           colMap.notes = idx;
+        } else if (h.includes('รูป') || h.includes('บัตร') || h.includes('image') || h.includes('photo') || h.includes('card')) {
+          colMap.cardImage = idx;
         } else if (h.includes('record id') || h.includes('id')) {
           colMap.id = idx;
         }
@@ -997,12 +1039,14 @@ export class GoogleSheetsService {
       if (colMap.phone === -1) colMap.phone = 4;
       if (colMap.dept === -1) colMap.dept = 5;
       if (colMap.workType === -1) colMap.workType = 6;
-      if (colMap.count === -1) colMap.count = 7;
-      if (colMap.vehicle === -1) colMap.vehicle = 8;
-      if (colMap.plate === -1) colMap.plate = 9;
-      if (colMap.eq === -1) colMap.eq = 10;
-      if (colMap.notes === -1) colMap.notes = 11;
-      if (colMap.id === -1) colMap.id = 12;
+      if (colMap.workDetails === -1) colMap.workDetails = 7;
+      if (colMap.count === -1) colMap.count = 8;
+      if (colMap.vehicle === -1) colMap.vehicle = 9;
+      if (colMap.plate === -1) colMap.plate = 10;
+      if (colMap.eq === -1) colMap.eq = 11;
+      if (colMap.notes === -1) colMap.notes = 12;
+      if (colMap.cardImage === -1) colMap.cardImage = 13;
+      if (colMap.id === -1) colMap.id = 14;
 
       const parsedRecords: VisitorRecord[] = [];
 
@@ -1024,6 +1068,9 @@ export class GoogleSheetsService {
 
         const dept = cols[colMap.dept]?.trim() || '-';
         const workType = cols[colMap.workType]?.trim() || '-';
+        const workDetails = colMap.workDetails !== -1 && cols[colMap.workDetails]?.trim() && cols[colMap.workDetails]?.trim() !== '-'
+          ? cols[colMap.workDetails]?.trim()
+          : undefined;
         const countNum = parseInt(cols[colMap.count]?.trim() || '1', 10) || 1;
 
         const vehicleRaw = cols[colMap.vehicle]?.trim() || 'รถยนต์ส่วนบุคคล';
@@ -1052,6 +1099,7 @@ export class GoogleSheetsService {
           phone: formattedPhone,
           department: dept,
           workType,
+          workDetails,
           visitorCount: countNum,
           vehicleType: validVehicle,
           licensePlate: plate,

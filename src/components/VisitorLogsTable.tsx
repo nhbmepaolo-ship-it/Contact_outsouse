@@ -104,7 +104,7 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
   };
 
   const handleExportCSV = () => {
-    const headers = ['ประทับเวลา', 'ชื่อ-นามสกุล', 'บริษัท', 'เบอร์โทร', 'แผนกที่เข้าติดต่อ', 'ลักษณะงาน', 'จำนวนผู้ติดต่อ', 'ยานพาหนะ', 'เลขทะเบียน', 'เครื่องมือแพทย์', 'สถานะรูปภาพบัตร'];
+    const headers = ['ประทับเวลา', 'ชื่อ-นามสกุล', 'บริษัท', 'เบอร์โทร', 'แผนกที่เข้าติดต่อ', 'ลักษณะงาน', 'รายละเอียดงาน', 'หมายเหตุ', 'จำนวนผู้ติดต่อ', 'ยานพาหนะ', 'เลขทะเบียน', 'เครื่องมือแพทย์', 'สถานะรูปภาพบัตร'];
     const rows = filteredRecords.map(r => [
       `"${r.timestamp}"`,
       `"${r.name}"`,
@@ -112,6 +112,8 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
       `"${cleanPhoneNumber(r.phone)}"`,
       `"${r.department}"`,
       `"${r.workType}"`,
+      `"${r.workDetails || '-'}"`,
+      `"${r.notes || '-'}"`,
       r.visitorCount,
       `"${r.vehicleType || '-'}"`,
       `"${r.licensePlate || '-'}"`,
@@ -367,6 +369,19 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
                         >
                           {r.workType}
                         </span>
+
+                        {r.workDetails && (
+                          <div className="text-[11px] text-slate-700 bg-slate-100/80 p-1.5 rounded border border-slate-200/60 mt-1">
+                            <span className="font-semibold text-slate-500 text-[10px] block">รายละเอียดงาน:</span>
+                            <span>{r.workDetails}</span>
+                          </div>
+                        )}
+
+                        {r.notes && (
+                          <div className="text-[10px] text-slate-500 italic mt-0.5">
+                            โน้ต: {r.notes}
+                          </div>
+                        )}
 
                         {r.equipmentHandled && r.equipmentHandled.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">

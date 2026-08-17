@@ -12,6 +12,7 @@ import {
   buildInitialContacts
 } from '../data/initialData';
 import { INITIAL_COMPANIES_FROM_SHEET } from '../data/sheetCompanies';
+import { INITIAL_COMPANY_EN_MAP } from '../data/companyEnglishMap';
 import { applyImageRetentionPolicy } from '../utils/imageRetention';
 import { DEFAULT_TELEGRAM_CONFIG } from './telegramService';
 import { cleanPhoneNumber } from '../utils/phoneFormatter';
@@ -22,6 +23,7 @@ const STORAGE_KEYS = {
   DEPARTMENTS: 'bme_departments_v3',
   EQUIPMENTS: 'bme_equipments_v3',
   SHEET_COMPANIES: 'bme_sheet_companies_v1',
+  COMPANY_EN_MAP: 'bme_company_en_map_v1',
   TELEGRAM: 'bme_telegram_config_v2',
   ADMIN_AUTH: 'bme_admin_authenticated_v2',
 };
@@ -378,6 +380,54 @@ export class StorageService {
   static saveSheetCompanies(companies: string[]): void {
     const cleanList = Array.from(new Set(companies.map(c => c.trim()).filter(Boolean)));
     localStorage.setItem(STORAGE_KEYS.SHEET_COMPANIES, JSON.stringify(cleanList));
+  }
+
+  // ================= COMPANY ENGLISH NAME MAPPINGS (COLUMN C FROM DATA_BASE) =================
+
+  static getCompanyEnglishMap(): Record<string, string> {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.COMPANY_EN_MAP);
+      if (!data) {
+        this.saveCompanyEnglishMap(INITIAL_COMPANY_EN_MAP);
+        return INITIAL_COMPANY_EN_MAP;
+      }
+      const parsed = JSON.parse(data);
+      return { ...INITIAL_COMPANY_EN_MAP, ...(parsed || {}) };
+    } catch {
+      return INITIAL_COMPANY_EN_MAP;
+    }
+  }
+
+  static saveCompanyEnglishMap(map: Record<string, string>): void {
+    try {
+      const merged = { ...INITIAL_COMPANY_EN_MAP, ...(map || {}) };
+      localStorage.setItem(STORAGE_KEYS.COMPANY_EN_MAP, JSON.stringify(merged));
+    } catch (e) {
+      console.error('Error saving company english map:', e);
+    }
+  }
+
+  static getCompanyEnglishName(thaiName: string): string | null {
+    if (!thaiName || thaiName === '-') return null;
+    const map = this.getCompanyEnglishMap();
+    const cleanTh = thaiName.trim();
+
+    // 1. Direct match
+    if (map[cleanTh]) return map[cleanTh];
+
+    // 2. Case-insensitive / normalized lookup
+    const lowerClean = cleanTh.toLowerCase();
+    for (const [th, en] of Object.entries(map)) {
+      if (th.toLowerCase() === lowerClean) return en;
+      // Partial containment for common variations
+      if (lowerClean.includes(th.toLowerCase()) || th.toLowerCase().includes(lowerClean)) {
+        if (th.length >= 4 && cleanTh.length >= 4) {
+          return en;
+        }
+      }
+    }
+
+    return null;
   }
 
   static getEquipment(): EquipmentInfo[] {
