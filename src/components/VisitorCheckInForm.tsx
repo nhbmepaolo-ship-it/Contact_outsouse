@@ -40,6 +40,7 @@ import { compressImage } from '../utils/imageCompressor';
 interface VisitorCheckInFormProps {
   departments: DepartmentInfo[];
   equipmentList: EquipmentInfo[];
+  sheetCompanies?: string[];
   onRecordAdded: (record: VisitorRecord) => void;
   onViewLogs: () => void;
 }
@@ -47,6 +48,7 @@ interface VisitorCheckInFormProps {
 export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   departments,
   equipmentList,
+  sheetCompanies: propSheetCompanies,
   onRecordAdded,
   onViewLogs,
 }) => {
@@ -55,7 +57,10 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [company, setCompany] = useState('');
   const [companySearch, setCompanySearch] = useState('');
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
-  const [sheetCompanies, setSheetCompanies] = useState<string[]>([]);
+  const [sheetCompanies, setSheetCompanies] = useState<string[]>(() => {
+    if (propSheetCompanies && propSheetCompanies.length > 0) return propSheetCompanies;
+    return StorageService.getSheetCompanies();
+  });
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<ContactRole>('ช่าง');
   const [department, setDepartment] = useState(departments[0]?.name || 'Physiotherapy');
@@ -74,11 +79,15 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
   const companyDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load Sheet Companies (Data_base Column A)
+  // Sync Sheet Companies from props or storage
   useEffect(() => {
-    const list = StorageService.getSheetCompanies();
-    setSheetCompanies(list);
-  }, []);
+    if (propSheetCompanies && propSheetCompanies.length > 0) {
+      setSheetCompanies(propSheetCompanies);
+    } else {
+      const list = StorageService.getSheetCompanies();
+      setSheetCompanies(list);
+    }
+  }, [propSheetCompanies]);
 
   // Close company dropdown when clicking outside
   useEffect(() => {
@@ -628,9 +637,14 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
               {/* Company */}
               <div className="relative" ref={companyDropdownRef}>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  บริษัท / สังกัด <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    บริษัท / สังกัด <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    ชีท Data_base (คอลัมน์ Company)
+                  </span>
+                </div>
 
                 <div className="relative">
                   <input
@@ -648,7 +662,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       setIsCompanyDropdownOpen(true);
                       if (formErrors.company) setFormErrors({ ...formErrors, company: '' });
                     }}
-                    placeholder="พิมพ์ค้นหาหรือเลือกบริษัท..."
+                    placeholder="พิมพ์ค้นหา หรือกดเพื่อเลือกบริษัทจากชีท Data_base..."
                     className={`w-full pl-9 pr-8 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
                       formErrors.company
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
@@ -660,7 +674,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                     type="button"
                     onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
                     className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                    title="เปิด/ปิด รายชื่อบริษัท"
+                    title="เปิด/ปิด รายชื่อบริษัทจากชีท Data_base"
                   >
                     <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCompanyDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
                   </button>
@@ -675,14 +689,15 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 {isCompanyDropdownOpen && (
                   <div
                     id="company-dropdown-menu"
-                    className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150"
+                    className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150"
                   >
                     {/* Header in dropdown */}
-                    <div className="p-2 bg-slate-50 sticky top-0 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                    <div className="p-2.5 bg-slate-50 sticky top-0 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-semibold z-10">
                       <div className="flex items-center gap-1.5">
-                        <Search className="w-3.5 h-3.5 text-slate-400" />
-                        <span>รายชื่อบริษัท ({filteredCompanies.length})</span>
+                        <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>รายชื่อบริษัทในชีท Data_base ({filteredCompanies.length}/{sheetCompanies.length})</span>
                       </div>
+                      <span className="text-[10px] text-slate-400 font-mono">คอลัมน์ A (Company)</span>
                     </div>
 
                     {filteredCompanies.length > 0 ? (
@@ -710,7 +725,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       })
                     ) : (
                       <div className="p-3 text-center text-xs text-slate-500">
-                        <p>ไม่พบบริษัท "{companySearch}"</p>
+                        <p>ไม่พบบริษัท "{companySearch}" ในชีท Data_base</p>
                         <button
                           type="button"
                           onClick={() => setIsCompanyDropdownOpen(false)}
@@ -726,7 +741,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 {/* Popular company tags */}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   <span className="text-[10px] text-slate-400 font-medium">เลือกด่วน:</span>
-                  {sheetCompanies.slice(0, 4).map((comp, idx) => (
+                  {sheetCompanies.slice(0, 6).map((comp, idx) => (
                     <button
                       key={idx}
                       type="button"
@@ -735,7 +750,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                         setCompanySearch(comp);
                         setIsCompanyDropdownOpen(false);
                       }}
-                      className="text-[10px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 rounded transition-colors cursor-pointer"
+                      className="text-[10px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded transition-colors cursor-pointer border border-slate-200/60"
                     >
                       {comp}
                     </button>

@@ -23,6 +23,7 @@ export default function App() {
   const [records, setRecords] = useState<VisitorRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
   const [equipmentList, setEquipmentList] = useState<EquipmentInfo[]>([]);
+  const [sheetCompanies, setSheetCompanies] = useState<string[]>([]);
   const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
 
   // Initial load
@@ -30,6 +31,7 @@ export default function App() {
     setRecords(StorageService.getVisitorRecords());
     setDepartments(StorageService.getDepartments());
     setEquipmentList(StorageService.getEquipment());
+    setSheetCompanies(StorageService.getSheetCompanies());
     setIsAdmin(StorageService.isAdminAuthenticated());
   };
 
@@ -43,6 +45,10 @@ export default function App() {
         await GoogleSheetsService.initSettings();
         const syncResult = await GoogleSheetsService.fetchMasterDataFromSheet();
         if (syncResult.success) {
+          if (syncResult.companies && syncResult.companies.length > 0) {
+            StorageService.saveSheetCompanies(syncResult.companies);
+            setSheetCompanies(syncResult.companies);
+          }
           if (syncResult.departments && syncResult.departments.length > 0) {
             StorageService.saveDepartments(syncResult.departments);
             setDepartments(syncResult.departments);
@@ -103,6 +109,7 @@ export default function App() {
           <VisitorCheckInForm
             departments={departments}
             equipmentList={equipmentList}
+            sheetCompanies={sheetCompanies}
             onRecordAdded={handleRecordAdded}
             onViewLogs={() => {
               if (isAdmin) {

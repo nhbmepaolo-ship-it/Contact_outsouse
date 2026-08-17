@@ -23,7 +23,8 @@ import {
   Code2,
   Zap,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { TelegramConfig, DepartmentInfo, EquipmentInfo, VisitorRecord } from '../types';
@@ -70,6 +71,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [copiedScript, setCopiedScript] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [showScriptCode, setShowScriptCode] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<{ success: boolean; message: string; count?: number } | null>(null);
 
   // Sync settings from server backend on mount
   React.useEffect(() => {
@@ -87,12 +90,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Active sub-tab
   const [activeSubTab, setActiveSubTab] = useState<'telegram' | 'sheets' | 'retention' | 'master'>('telegram');
 
-  // New Department & Equipment inline state
+  // New Department, Company & Equipment inline state
   const [newDeptName, setNewDeptName] = useState('');
   const [newDeptFloor, setNewDeptFloor] = useState('');
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [sheetCompanies, setSheetCompanies] = useState<string[]>(() => StorageService.getSheetCompanies());
   const [newEqName, setNewEqName] = useState('');
   const [newEqDept, setNewEqDept] = useState(departments[0]?.name || '');
   const [newEqVendor, setNewEqVendor] = useState('');
+
+  // Reload sheet companies on mount/refresh
+  React.useEffect(() => {
+    setSheetCompanies(StorageService.getSheetCompanies());
+  }, [departments]);
 
   // Handle Telegram Test
   const handleTestTelegram = async () => {
@@ -257,6 +267,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setIsBatchSyncing(false);
   };
 
+  // Migrate Old Form Responses to Visitor_Logs
+  const handleMigrateOldFormData = async () => {
+    setIsMigrating(true);
+    setMigrationResult(null);
+
+    try {
+      const result = await GoogleSheetsService.migrateOldFormDataToVisitorLogs(sheetId, webhookUrl);
+      setMigrationResult(result);
+      if (result.success) {
+        onRefreshData();
+        try {
+          confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+        } catch {}
+      }
+    } catch (err: any) {
+      setMigrationResult({
+        success: false,
+        message: `ย้ายข้อมูลไม่สำเร็จ: ${err?.message || 'ข้อผิดพลาดเครือข่าย'}`,
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   // Add Department
   const handleAddDept = () => {
     if (!newDeptName.trim()) return;
@@ -270,6 +304,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setNewDeptName('');
     setNewDeptFloor('');
     onRefreshData();
+  };
+
+  // Add Company
+  const handleAddCompany = () => {
+    if (!newCompanyName.trim()) return;
+    const current = StorageService.getSheetCompanies();
+    if (!current.includes(newCompanyName.trim())) {
+      const updated = [...current, newCompanyName.trim()];
+      StorageService.saveSheetCompanies(updated);
+      setSheetCompanies(updated);
+      setNewCompanyName('');
+      onRefreshData();
+    }
   };
 
   // Add Equipment
@@ -788,28 +835,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </form>
           </div>
 
-          {/* Legacy Data Migration Help Banner */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-5 shadow-xs space-y-3">
-            <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>วิธีย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" มารวมในชีท "Visitor_Logs" ชีทเดียว</span>
+          {/* Legacy Data Migration to Visitor_Logs Section */}
+          <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-blue-950 text-white rounded-xl p-5 sm:p-6 shadow-md border border-indigo-700/50 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  <h4 className="font-bold text-white text-sm sm:text-base">
+                    ย้ายข้อมูลจาก "การตอบแบบฟอร์ม 1" มารวมใน "Visitor_Logs" ชีทเดียว
+                  </h4>
+                </div>
+                <p className="text-xs text-indigo-200">
+                  แมชข้อมูลตรงช่องคอลัมน์ 100% (วันเวลา, ชื่อ-นามสกุล, บริษัท, บทบาท, แผนก, งาน, จำนวนคน, พาหนะ, ทะเบียน, เครื่องมือแพทย์)
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleMigrateOldFormData}
+                disabled={isMigrating}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 text-xs font-bold transition-all shadow-lg hover:shadow-amber-500/25 active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                <RefreshCw className={`w-4 h-4 ${isMigrating ? 'animate-spin' : ''}`} />
+                <span>{isMigrating ? 'กำลังย้ายข้อมูล...' : '⚡ ย้ายข้อมูลเข้า Visitor_Logs ทันที'}</span>
+              </button>
             </div>
-            <p className="text-xs text-blue-800 leading-relaxed">
-              หากต้องการให้ข้อมูลทั้งหมดรวมอยู่ในชีท <b>Visitor_Logs</b> เพียงชีทเดียวอย่างเป็นระเบียบ ท่านสามารถทำได้ง่ายๆ 2 วิธี:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-700">
-              <div className="bg-white p-3.5 rounded-lg border border-blue-100 space-y-1">
-                <b className="text-indigo-700">วิธีที่ 1: ซิงค์จากหน้าเว็บนี้ทันที</b>
-                <p className="text-slate-600 text-[11px]">
-                  กดปุ่มสีม่วง <b>"⚡ ซิงค์ข้อมูลทั้งหมด ({records.length} รายการ) เข้าชีท Visitor_Logs"</b> ด้านบน ระบบจะส่งข้อมูลทั้งหมดเข้าชีทใหม่ทันที
-                </p>
+
+            {/* Migration Result Message */}
+            {migrationResult && (
+              <div
+                className={`p-3.5 rounded-lg text-xs font-semibold border flex items-start gap-2.5 ${
+                  migrationResult.success
+                    ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50'
+                    : 'bg-rose-950/80 text-rose-200 border-rose-500/50'
+                }`}
+              >
+                {migrationResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-0.5">
+                  <p className="font-bold">{migrationResult.message}</p>
+                  {migrationResult.success && (
+                    <p className="text-[11px] text-emerald-300/80 font-normal">
+                      ข้อมูลถูกผสานเข้ากับประวัติและชีท Visitor_Logs โดยตรวจสอบรายการซ้ำซ้อนเรียบร้อยแล้ว
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="bg-white p-3.5 rounded-lg border border-blue-100 space-y-1">
-                <b className="text-indigo-700">วิธีที่ 2: รัน Migration ใน Apps Script</b>
-                <p className="text-slate-600 text-[11px]">
-                  ในหน้า Apps Script ให้เลือกฟังก์ชัน <b><code>migrateOldFormDataToVisitorLogs</code></b> จากดรอปดาวน์ด้านบน แล้วกด <b>"เรียกใช้" (Run)</b> สคริปต์จะย้ายข้อมูลทั้งหมดจากชีทเก่าเข้า "Visitor_Logs" ทันทีโดยไม่ซ้ำซ้อน
-                </p>
-              </div>
+            )}
+
+            {/* Notice about future data */}
+            <div className="p-3 bg-white/10 rounded-lg border border-white/10 flex items-start gap-2 text-xs text-indigo-100">
+              <Zap className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+              <p className="leading-relaxed text-[11px]">
+                <b>การทำงานต่อไป:</b> เมื่อย้ายข้อมูลเสร็จแล้ว ทุกครั้งที่มีการลงทะเบียนหรือแก้ไขข้อมูลใหม่ ระบบจะบันทึกลงในชีท <b>Visitor_Logs</b> เพียงชีทเดียวเท่านั้นโดยตรง ไม่จำเป็นต้องกรอกใน "การตอบแบบฟอร์ม 1" อีกต่อไป
+              </p>
             </div>
           </div>
 
@@ -1001,6 +1083,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Sub-tab 4: Master Data */}
       {activeSubTab === 'master' && (
         <div className="space-y-6">
+          {/* Companies */}
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 tracking-tight">
+                <Building2 className="w-4 h-4 text-emerald-600" />
+                <span>รายชื่อบริษัทคู่สัญญา (ชีท Data_base คอลัมน์ Company) - {sheetCompanies.length} บริษัท</span>
+              </h3>
+              <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                ดึงจากชีท Data_base คอลัมน์ A อัตโนมัติ
+              </span>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newCompanyName}
+                onChange={(e) => setNewCompanyName(e.target.value)}
+                placeholder="ชื่อบริษัท เช่น ดับเบิ้ลยู เทค, โซวิค, Thai GL..."
+                className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-none transition-all"
+              />
+              <button
+                onClick={handleAddCompany}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer shadow-xs"
+              >
+                + เพิ่มบริษัท
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-56 overflow-y-auto p-1">
+              {sheetCompanies.map((comp, idx) => (
+                <div key={idx} className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span className="font-medium text-slate-800 truncate" title={comp}>{comp}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Departments */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

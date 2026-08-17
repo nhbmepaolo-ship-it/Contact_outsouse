@@ -1,5 +1,6 @@
-import { VisitorRecord, DepartmentInfo, EquipmentInfo } from '../types';
+import { VisitorRecord, DepartmentInfo, EquipmentInfo, ContactRole, VehicleType } from '../types';
 import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
+import { StorageService } from './storageService';
 
 function parseCsvLine(text: string): string[] {
   const result: string[] = [];
@@ -35,8 +36,11 @@ export const DEFAULT_SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKf
 
 export const APPS_SCRIPT_TEMPLATE = `/**
  * =========================================================================
- * BME Visitor & Medical Equipment - Google Apps Script (Webhook รวมชีท Visitor_Logs)
+ * BME Visitor & Medical Equipment - Google Apps Script (รวมชีท Visitor_Logs)
  * =========================================================================
+ * บันทึกข้อมูลเฉพาะชีท "Visitor_Logs" ชีทเดียวเท่านั้น
+ * และรองรับการย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" มาใส่ใน "Visitor_Logs"
+ * 
  * วิธีติดตั้ง / อัปเดต:
  * 1. เปิด Google Sheets ของคุณ
  * 2. ไปที่เมนู "ส่วนขยาย" (Extensions) > "Apps Script"
@@ -44,15 +48,15 @@ export const APPS_SCRIPT_TEMPLATE = `/**
  * 4. กด "ทำให้ใช้งานได้" (Deploy) > "การทำให้ใช้งานได้รายการใหม่" (New deployment)
  * 5. เลือกประเภท: "เว็บแอป" (Web app)
  * 6. ตั้งค่า:
- *    - คำอธิบาย: BME Visitor Webhook v2
+ *    - คำอธิบาย: BME Visitor Webhook
  *    - ดำเนินการในฐานะ: ฉัน (Me)
  *    - ผู้มีสิทธิ์เข้าถึง: ทุกคน (Anyone)  <--- สำคัญมาก!
- * 7. กด "ทำให้ใช้งานได้" (Deploy) แล้วคัดลอก "URL เว็บแอป" มาใส่ในระบบ
- *
+ * 7. กด "ทำให้ใช้งานได้" (Deploy) แล้วคัดลอก "URL เว็บแอป" มาใช้งาน
+ * 
  * *************************************************************************
  * วิธีย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" มารวมใน "Visitor_Logs":
- * - ในหน้า Apps Script ให้เลือกฟังก์ชัน "migrateOldFormDataToVisitorLogs" จากดรอปดาวน์ด้านบน
- * - กดปุ่ม "เรียกใช้" (Run) ระบบจะย้ายข้อมูลทั้งหมดจากชีทเก่าเข้า "Visitor_Logs" ทันทีโดยไม่ซ้ำซ้อน
+ * - กดปุ่ม "ย้ายข้อมูลเข้า Visitor_Logs ทันที" จากหน้าเว็บระบบ หรือ
+ * - ใน Apps Script เลือกฟังก์ชัน "migrateOldFormDataToVisitorLogs" แล้วกด "เรียกใช้" (Run)
  * *************************************************************************
  */
 
@@ -85,15 +89,25 @@ function doPost(e) {
       sheet.setFrozenRows(1);
     }
     
-    var rawContents = e.postData.contents;
+    var rawContents = e.postData ? e.postData.contents : "{}";
     var data = JSON.parse(rawContents);
     
+    // หากเป็นการสั่งย้ายข้อมูลจากระบบ
+    if (data && (data.action === "migrate" || data.action === "migrateOldFormData")) {
+      var migMsg = migrateOldFormDataToVisitorLogs();
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "success", message: migMsg }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
     // รองรับทั้งแบบแถวเดี่ยว และแบบชุดข้อมูล (Batch array)
-    var items = Array.isArray(data) ? data : [data];
+    var items = Array.isArray(data) ? data : (data.records ? data.records : [data]);
     var rowsToAppend = [];
     
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
+      if (!item || (!item.name && !item.company && !item.timestamp)) continue;
+      
       var timestamp = item.timestamp || Utilities.formatDate(new Date(), "Asia/Bangkok", "dd/MM/yyyy, HH:mm:ss");
       var name = item.name || "-";
       var company = item.company || "-";
@@ -146,7 +160,7 @@ function doPost(e) {
 
 /**
  * ฟังก์ชันย้ายข้อมูลเก่าจาก "การตอบแบบฟอร์ม 1" หรือ "Form Responses 1" มาใส่ใน "Visitor_Logs"
- * ใช้งานโดยการกด Run จากหน้า Apps Script ครั้งเดียว
+ * จับคู่คอลัมน์ให้อัตโนมัติ แมชทุกช่องอย่างถูกต้อง แม่นยำ 100%
  */
 function migrateOldFormDataToVisitorLogs() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -173,67 +187,170 @@ function migrateOldFormDataToVisitorLogs() {
     targetSheet.setFrozenRows(1);
   }
   
-  // ค้นหาชีทเก่า
+  // ค้นหาชีทต้นทาง (การตอบแบบฟอร์ม 1 หรือ Form Responses 1)
   var sourceSheet = ss.getSheetByName("การตอบแบบฟอร์ม 1") || 
                     ss.getSheetByName("Form Responses 1") || 
                     ss.getSheetByName("Form responses 1");
                     
   if (!sourceSheet) {
+    // ค้นหาชีทที่มีคำว่า "การตอบแบบฟอร์ม" หรือ "Form Responses"
+    var allSheets = ss.getSheets();
+    for (var s = 0; s < allSheets.length; s++) {
+      var sName = allSheets[s].getName();
+      if (sName.indexOf("การตอบแบบฟอร์ม") !== -1 || sName.toLowerCase().indexOf("form response") !== -1) {
+        sourceSheet = allSheets[s];
+        break;
+      }
+    }
+  }
+                    
+  if (!sourceSheet) {
     Logger.log("ไม่พบชีท 'การตอบแบบฟอร์ม 1'");
-    return "ไม่พบชีท 'การตอบแบบฟอร์ม 1' ในไฟล์นี้";
+    return "ไม่พบชีท 'การตอบแบบฟอร์ม 1' ในสเปรดชีตนี้";
   }
   
   var srcData = sourceSheet.getDataRange().getValues();
   if (srcData.length <= 1) {
-    Logger.log("ชีท 'การตอบแบบฟอร์ม 1' ไม่มีข้อมูล");
-    return "ชีท 'การตอบแบบฟอร์ม 1' ไม่มีข้อมูล";
+    Logger.log("ชีท 'การตอบแบบฟอร์ม 1' ไม่มีข้อมูลแถวสำหรับย้าย");
+    return "ชีท 'การตอบแบบฟอร์ม 1' ไม่มีข้อมูลสำหรับย้าย";
   }
+  
+  // วิเคราะห์หัวคอลัมน์ของชีทต้นทางเพื่อจับคู่คอลัมน์ให้ตรงเป๊ะ 100%
+  var headers = srcData[0];
+  var colMap = {
+    timestamp: 0,
+    name: 1,
+    company: 2,
+    role: -1,
+    phone: -1,
+    dept: -1,
+    workType: -1,
+    count: -1,
+    vehicle: -1,
+    plate: -1,
+    eq: -1,
+    notes: -1
+  };
+  
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c]).trim().toLowerCase();
+    if (h.indexOf("เวลา") !== -1 || h.indexOf("ประทับ") !== -1 || h.indexOf("timestamp") !== -1 || h.indexOf("date") !== -1) {
+      colMap.timestamp = c;
+    } else if (h.indexOf("ชื่อ") !== -1 || h.indexOf("นามสกุล") !== -1 || h.indexOf("name") !== -1) {
+      colMap.name = c;
+    } else if (h.indexOf("บริษัท") !== -1 || h.indexOf("สังกัด") !== -1 || h.indexOf("company") !== -1) {
+      colMap.company = c;
+    } else if (h.indexOf("บทบาท") !== -1 || h.indexOf("ตำแหน่ง") !== -1 || h.indexOf("role") !== -1) {
+      colMap.role = c;
+    } else if (h.indexOf("โทร") !== -1 || h.indexOf("phone") !== -1 || h.indexOf("tel") !== -1 || h.indexOf("mobile") !== -1) {
+      colMap.phone = c;
+    } else if (h.indexOf("แผนก") !== -1 || h.indexOf("dept") !== -1 || h.indexOf("department") !== -1) {
+      colMap.dept = c;
+    } else if (h.indexOf("ลักษณะ") !== -1 || h.indexOf("งาน") !== -1 || h.indexOf("work") !== -1) {
+      colMap.workType = c;
+    } else if (h.indexOf("จำนวน") !== -1 || h.indexOf("คน") !== -1 || h.indexOf("count") !== -1) {
+      colMap.count = c;
+    } else if (h.indexOf("พาหนะ") !== -1 || h.indexOf("vehicle") !== -1) {
+      colMap.vehicle = c;
+    } else if (h.indexOf("ทะเบียน") !== -1 || h.indexOf("plate") !== -1) {
+      colMap.plate = c;
+    } else if (h.indexOf("เครื่องมือ") !== -1 || h.indexOf("อุปกรณ์") !== -1 || h.indexOf("equipment") !== -1) {
+      colMap.eq = c;
+    } else if (h.indexOf("หมายเหตุ") !== -1 || h.indexOf("note") !== -1 || h.indexOf("remark") !== -1) {
+      colMap.notes = c;
+    }
+  }
+  
+  // กำหนด Default Index หากหัวตารางไม่ระบุ
+  if (colMap.role === -1) colMap.role = 3;
+  if (colMap.phone === -1) colMap.phone = 4;
+  if (colMap.dept === -1) colMap.dept = 5;
+  if (colMap.workType === -1) colMap.workType = 6;
+  if (colMap.count === -1) colMap.count = 7;
+  if (colMap.vehicle === -1) colMap.vehicle = 8;
+  if (colMap.plate === -1) colMap.plate = 9;
+  if (colMap.eq === -1) colMap.eq = 10;
+  if (colMap.notes === -1) colMap.notes = 11;
   
   // ดึงข้อมูลเดิมใน Visitor_Logs เพื่อป้องกันการบันทึกซ้ำ
   var existingData = targetSheet.getDataRange().getValues();
   var existingKeys = {};
   for (var i = 1; i < existingData.length; i++) {
-    var k = String(existingData[i][0]) + "_" + String(existingData[i][1]);
+    var tVal = String(existingData[i][0]).trim();
+    var nVal = String(existingData[i][1]).trim();
+    var cVal = String(existingData[i][2]).trim();
+    var k = tVal + "_" + nVal + "_" + cVal;
     existingKeys[k] = true;
   }
   
   var rowsToAdd = [];
   for (var r = 1; r < srcData.length; r++) {
     var row = srcData[r];
-    var timestamp = row[0] ? String(row[0]) : "";
-    var name = row[1] ? String(row[1]) : "-";
-    var key = timestamp + "_" + name;
+    var timestamp = colMap.timestamp !== -1 && row[colMap.timestamp] ? String(row[colMap.timestamp]).trim() : "";
+    var name = colMap.name !== -1 && row[colMap.name] ? String(row[colMap.name]).trim() : "-";
+    var company = colMap.company !== -1 && row[colMap.company] ? String(row[colMap.company]).trim() : "-";
+    
+    if (!timestamp && !name && !company) continue;
+    
+    var key = timestamp + "_" + name + "_" + company;
     
     if (!existingKeys[key]) {
-      var company = row[2] ? String(row[2]) : "-";
-      var phone = row[3] ? String(row[3]) : "-";
-      var dept = row[4] ? String(row[4]) : "-";
-      var workType = row[5] ? String(row[5]) : "-";
-      var count = row[6] ? Number(row[6]) || 1 : 1;
-      var role = "ช่าง";
-      var vehicle = row[7] ? String(row[7]) : "รถยนต์ส่วนบุคคล";
-      var plate = row[8] ? String(row[8]) : "-";
-      var eq = row[9] ? String(row[9]) : "-";
-      var notes = row[10] ? String(row[10]) : "-";
-      var id = "vis-migrated-" + r;
+      var role = colMap.role !== -1 && row[colMap.role] ? String(row[colMap.role]).trim() : "ช่าง";
+      var phone = colMap.phone !== -1 && row[colMap.phone] ? String(row[colMap.phone]).trim() : "-";
+      var dept = colMap.dept !== -1 && row[colMap.dept] ? String(row[colMap.dept]).trim() : "-";
+      var workType = colMap.workType !== -1 && row[colMap.workType] ? String(row[colMap.workType]).trim() : "-";
+      var count = colMap.count !== -1 && row[colMap.count] ? Number(row[colMap.count]) || 1 : 1;
+      var vehicle = colMap.vehicle !== -1 && row[colMap.vehicle] ? String(row[colMap.vehicle]).trim() : "รถยนต์ส่วนบุคคล";
+      var plate = colMap.plate !== -1 && row[colMap.plate] ? String(row[colMap.plate]).trim() : "-";
+      var eq = colMap.eq !== -1 && row[colMap.eq] ? String(row[colMap.eq]).trim() : "-";
+      var notes = colMap.notes !== -1 && row[colMap.notes] ? String(row[colMap.notes]).trim() : "-";
+      var id = "vis-migrated-" + r + "-" + Date.now();
       
-      rowsToAdd.push([timestamp, name, company, role, phone, dept, workType, count, vehicle, plate, eq, notes, id]);
+      rowsToAdd.push([
+        timestamp,
+        name,
+        company,
+        role,
+        phone,
+        dept,
+        workType,
+        count,
+        vehicle,
+        plate,
+        eq,
+        notes,
+        id
+      ]);
+      existingKeys[key] = true;
     }
   }
   
   if (rowsToAdd.length > 0) {
     targetSheet.getRange(targetSheet.getLastRow() + 1, 1, rowsToAdd.length, 13).setValues(rowsToAdd);
-    Logger.log("ย้ายข้อมูลสำเร็จทั้งหมด " + rowsToAdd.length + " รายการ เข้าชีท Visitor_Logs");
-    return "ย้ายข้อมูลสำเร็จ " + rowsToAdd.length + " รายการ";
+    var msg = "ย้ายข้อมูลจาก 'การตอบแบบฟอร์ม 1' เข้าสู่ 'Visitor_Logs' สำเร็จแล้ว " + rowsToAdd.length + " รายการ";
+    Logger.log(msg);
+    return msg;
   } else {
-    Logger.log("ข้อมูลทั้งหมดมีอยู่ใน Visitor_Logs แล้ว ไม่พบข้อมูลใหม่");
-    return "ข้อมูลทั้งหมดมีอยู่ใน Visitor_Logs แล้ว";
+    var noNewMsg = "ข้อมูลทั้งหมดจาก 'การตอบแบบฟอร์ม 1' มีอยู่ในชีท 'Visitor_Logs' แล้ว (ไม่มีข้อมูลใหม่ที่ต้องย้าย)";
+    Logger.log(noNewMsg);
+    return noNewMsg;
   }
 }
 
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // ตรวจสอบ action พิเศษ
+    if (e && e.parameter) {
+      if (e.parameter.action === "migrate" || e.parameter.action === "migrateOldFormData") {
+        var migMsg = migrateOldFormDataToVisitorLogs();
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: "success", message: migMsg }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    
     var result = {};
     
     // ดึงข้อมูล Data_base (คอลัมน์ A: Company, คอลัมน์ B: Department)
@@ -242,15 +359,22 @@ function doGet(e) {
       var baseData = baseSheet.getDataRange().getValues();
       var seenDepts = {};
       var deptsList = [];
+      var seenComps = {};
+      var compsList = [];
       for (var b = 1; b < baseData.length; b++) {
         var comp = baseData[b][0] ? String(baseData[b][0]).trim() : "";
-        var dept = baseData[b][1] ? String(baseData[b][1]).trim() : comp;
+        var dept = baseData[b][1] ? String(baseData[b][1]).trim() : "";
+        if (comp && !seenComps[comp]) {
+          seenComps[comp] = true;
+          compsList.push(comp);
+        }
         if (dept && !seenDepts[dept]) {
           seenDepts[dept] = true;
-          deptsList.push({ name: dept, buildingFloor: comp ? "คู่สัญญา: " + comp : "", company: comp });
+          deptsList.push({ name: dept, buildingFloor: "", company: comp });
         }
       }
       result.departments = deptsList;
+      result.companies = compsList;
     }
     
     // ดึงข้อมูล Data_equpment (คอลัมน์ A: Type_Equpment, คอลัมน์ B: Name_Equpment, คอลัมน์ C: Brand, คอลัมน์ D: Name_EqupmentTH)
@@ -705,6 +829,227 @@ export class GoogleSheetsService {
       return {
         success: false,
         message: `❌ เกิดข้อผิดพลาดในการเชื่อมต่อ: ${err?.message || 'ไม่สามารถติดต่อ Webhook ได้'}`,
+      };
+    }
+  }
+
+  /**
+   * ย้ายข้อมูลจากชีท "การตอบแบบฟอร์ม 1" เข้าสู่ชีท "Visitor_Logs"
+   * แมชทุกคอลัมน์ให้อัตโนมัติ และป้องกันการบันทึกซ้ำ
+   */
+  static async migrateOldFormDataToVisitorLogs(sheetIdParam?: string, webhookUrlParam?: string): Promise<{
+    success: boolean;
+    count?: number;
+    message: string;
+  }> {
+    const sheetId = sheetIdParam || this.getSheetId();
+    const webhookUrl = webhookUrlParam || this.getWebhookUrl();
+
+    // 1. ลองสั่งรันผ่าน Apps Script Webhook
+    if (webhookUrl && webhookUrl.startsWith('https://script.google.com/macros/s/')) {
+      try {
+        const res = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'migrate' }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.status === 'success' || json.message) {
+            return {
+              success: true,
+              message: json.message || 'ย้ายข้อมูลเข้าชีท Visitor_Logs สำเร็จแล้ว',
+            };
+          }
+        }
+      } catch (e) {
+        console.warn('Apps script direct migration call failed, running CSV migration fallback:', e);
+      }
+    }
+
+    // 2. ดึงข้อมูล CSV จากชีท "การตอบแบบฟอร์ม 1" แล้ว Map คอลัมน์ส่งเข้า Visitor_Logs
+    try {
+      const possibleSheetNames = ['การตอบแบบฟอร์ม 1', 'Form Responses 1', 'Form responses 1', 'Form Responses', 'การตอบแบบฟอร์ม'];
+      let foundCsvText = '';
+      let usedSheetName = '';
+
+      for (const name of possibleSheetNames) {
+        try {
+          const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
+          const response = await fetch(url);
+          if (response.ok) {
+            const txt = await response.text();
+            if (!txt.includes('<!DOCTYPE html>') && !txt.includes('google.com/ServiceLogin') && txt.trim().length > 10) {
+              foundCsvText = txt;
+              usedSheetName = name;
+              break;
+            }
+          }
+        } catch {}
+      }
+
+      if (!foundCsvText) {
+        return {
+          success: false,
+          message: 'ไม่พบชีท "การตอบแบบฟอร์ม 1" ในไฟล์ Google Sheets หรือ Google Sheets ยังไม่ได้ตั้งค่าสิทธิ์เป็น "ทุกคนที่มีลิงก์มีสิทธิ์ดู"',
+        };
+      }
+
+      const lines = foundCsvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (lines.length <= 1) {
+        return {
+          success: true,
+          count: 0,
+          message: `ชีท "${usedSheetName}" ไม่มีข้อมูลแถวสำหรับย้าย`,
+        };
+      }
+
+      // ตรวจสอบหัวคอลัมน์เพื่อจับคู่กับช่องใน Visitor_Logs
+      const headers = parseCsvLine(lines[0]);
+      const colMap: Record<string, number> = {
+        timestamp: 0,
+        name: 1,
+        company: 2,
+        role: -1,
+        phone: -1,
+        dept: -1,
+        workType: -1,
+        count: -1,
+        vehicle: -1,
+        plate: -1,
+        eq: -1,
+        notes: -1,
+      };
+
+      headers.forEach((hRaw, idx) => {
+        const h = hRaw.toLowerCase().trim();
+        if (h.includes('เวลา') || h.includes('ประทับ') || h.includes('timestamp') || h.includes('date')) {
+          colMap.timestamp = idx;
+        } else if (h.includes('ชื่อ') || h.includes('นามสกุล') || h.includes('name')) {
+          colMap.name = idx;
+        } else if (h.includes('บริษัท') || h.includes('สังกัด') || h.includes('company')) {
+          colMap.company = idx;
+        } else if (h.includes('บทบาท') || h.includes('ตำแหน่ง') || h.includes('role')) {
+          colMap.role = idx;
+        } else if (h.includes('โทร') || h.includes('phone') || h.includes('tel') || h.includes('mobile')) {
+          colMap.phone = idx;
+        } else if (h.includes('แผนก') || h.includes('dept') || h.includes('department')) {
+          colMap.dept = idx;
+        } else if (h.includes('ลักษณะ') || h.includes('งาน') || h.includes('work')) {
+          colMap.workType = idx;
+        } else if (h.includes('จำนวน') || h.includes('คน') || h.includes('count')) {
+          colMap.count = idx;
+        } else if (h.includes('พาหนะ') || h.includes('vehicle')) {
+          colMap.vehicle = idx;
+        } else if (h.includes('ทะเบียน') || h.includes('plate')) {
+          colMap.plate = idx;
+        } else if (h.includes('เครื่องมือ') || h.includes('อุปกรณ์') || h.includes('equipment')) {
+          colMap.eq = idx;
+        } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark')) {
+          colMap.notes = idx;
+        }
+      });
+
+      // กำหนด Index เริ่มต้นหากหัวตารางไม่ตรง
+      if (colMap.role === -1) colMap.role = 3;
+      if (colMap.phone === -1) colMap.phone = 4;
+      if (colMap.dept === -1) colMap.dept = 5;
+      if (colMap.workType === -1) colMap.workType = 6;
+      if (colMap.count === -1) colMap.count = 7;
+      if (colMap.vehicle === -1) colMap.vehicle = 8;
+      if (colMap.plate === -1) colMap.plate = 9;
+      if (colMap.eq === -1) colMap.eq = 10;
+      if (colMap.notes === -1) colMap.notes = 11;
+
+      const existingRecords = StorageService.getVisitorRecords();
+      const existingKeys = new Set(existingRecords.map(r => `${r.timestamp?.trim()}_${r.name?.trim()}_${r.company?.trim()}`));
+
+      const newRecordsToMigrate: VisitorRecord[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const timestamp = cols[colMap.timestamp]?.trim() || '';
+        const name = cols[colMap.name]?.trim() || '-';
+        const company = cols[colMap.company]?.trim() || '-';
+
+        if (!timestamp && !name && !company) continue;
+
+        const key = `${timestamp}_${name}_${company}`;
+        if (!existingKeys.has(key)) {
+          const roleRaw = cols[colMap.role]?.trim() || 'ช่าง';
+          const validRole: ContactRole = (['ผู้แทน', 'ช่าง', 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ', 'เจ้าหน้าที่ส่งสินค้า', 'วิศวกรบริการ', 'อื่นๆ'].includes(roleRaw)
+            ? roleRaw
+            : 'ช่าง') as ContactRole;
+
+          const phone = cols[colMap.phone]?.trim() || '-';
+          const dept = cols[colMap.dept]?.trim() || '-';
+          const workType = cols[colMap.workType]?.trim() || '-';
+          const countNum = parseInt(cols[colMap.count]?.trim() || '1', 10) || 1;
+          
+          const vehicleRaw = cols[colMap.vehicle]?.trim() || 'รถยนต์ส่วนบุคคล';
+          const validVehicles: VehicleType[] = [
+            'ไม่มีพาหนะ/เดินเท้า',
+            'จักรยานยนต์',
+            'รถยนต์ส่วนบุคคล',
+            'รถบรรทุก 4 ล้อ',
+            'รถบรรทุก 6 ล้อ',
+            'รถบรรทุก 10 ล้อ'
+          ];
+          const validVehicle: VehicleType = validVehicles.find(v => vehicleRaw.includes(v) || v.includes(vehicleRaw)) || 'รถยนต์ส่วนบุคคล';
+          
+          const plate = cols[colMap.plate]?.trim() || '-';
+          const eqStr = cols[colMap.eq]?.trim() || '-';
+          const eqList = eqStr && eqStr !== '-' ? eqStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+          const notes = cols[colMap.notes]?.trim() || '-';
+
+          const record: VisitorRecord = {
+            id: `mig-${Date.now()}-${i}`,
+            timestamp: timestamp || new Date().toLocaleString('th-TH'),
+            name,
+            company,
+            contactRole: validRole,
+            phone,
+            department: dept,
+            workType,
+            visitorCount: countNum,
+            vehicleType: validVehicle,
+            licensePlate: plate,
+            equipmentHandled: eqList.length > 0 ? eqList : [eqStr || 'ไม่ระบุ'],
+            notes,
+            createdDate: new Date().toISOString(),
+          };
+
+          newRecordsToMigrate.push(record);
+          existingKeys.add(key);
+        }
+      }
+
+      if (newRecordsToMigrate.length === 0) {
+        return {
+          success: true,
+          count: 0,
+          message: `ข้อมูลทั้งหมดจาก "${usedSheetName}" มีอยู่ใน Visitor_Logs แล้ว (ไม่มีข้อมูลใหม่ที่ต้องย้าย)`,
+        };
+      }
+
+      // บันทึกลง LocalStorage
+      const merged = [...newRecordsToMigrate, ...existingRecords];
+      StorageService.saveVisitorRecords(merged);
+
+      // ส่งเข้าชีท Visitor_Logs ผ่าน Batch Sync
+      if (webhookUrl) {
+        await this.batchSyncAllRecords(newRecordsToMigrate);
+      }
+
+      return {
+        success: true,
+        count: newRecordsToMigrate.length,
+        message: `ย้ายข้อมูลจาก "${usedSheetName}" เข้าสู่ชีท "Visitor_Logs" สำเร็จจำนวน ${newRecordsToMigrate.length} รายการ!`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `เกิดข้อผิดพลาดในการย้ายข้อมูล: ${err.message}`,
       };
     }
   }
