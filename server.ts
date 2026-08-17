@@ -381,21 +381,22 @@ app.post('/api/sheets/submit', async (req, res) => {
       });
     }
 
-    // Forward to Google Apps Script
+    // Forward to Google Apps Script with redirect follow
     const response = await fetch(webhookUrl, {
       method: 'POST',
+      redirect: 'follow',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8'
       },
       body: JSON.stringify(record)
     });
 
-    const responseText = await response.text();
     let jsonResp;
     try {
-      jsonResp = JSON.parse(responseText);
+      const responseText = await response.text();
+      jsonResp = responseText ? JSON.parse(responseText) : { status: 'success' };
     } catch {
-      jsonResp = { status: 'success', text: responseText };
+      jsonResp = { status: 'success' };
     }
 
     return res.json({
@@ -431,21 +432,22 @@ app.post('/api/sheets/batch-sync', async (req, res) => {
       });
     }
 
-    // Send array payload to Apps Script doPost
+    // Send array payload to Apps Script doPost with redirect follow
     const response = await fetch(webhookUrl, {
       method: 'POST',
+      redirect: 'follow',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8'
       },
       body: JSON.stringify(records)
     });
 
-    const responseText = await response.text();
     let jsonResp;
     try {
-      jsonResp = JSON.parse(responseText);
+      const responseText = await response.text();
+      jsonResp = responseText ? JSON.parse(responseText) : { status: 'success' };
     } catch {
-      jsonResp = { status: 'success', text: responseText };
+      jsonResp = { status: 'success' };
     }
 
     return res.json({
@@ -458,6 +460,49 @@ app.post('/api/sheets/batch-sync', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Batch sync failed'
+    });
+  }
+});
+
+// Proxy to migrate legacy form responses
+app.post('/api/sheets/migrate', async (req, res) => {
+  try {
+    const { webhookUrl: customUrl } = req.body;
+    const webhookUrl = (customUrl || cachedSettings.sheetWebhookUrl || '').trim();
+
+    if (!webhookUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Google Apps Script Webhook URL is not configured'
+      });
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({ action: 'migrate' })
+    });
+
+    let jsonResp;
+    try {
+      const responseText = await response.text();
+      jsonResp = responseText ? JSON.parse(responseText) : { status: 'success' };
+    } catch {
+      jsonResp = { status: 'success' };
+    }
+
+    return res.json({
+      success: true,
+      data: jsonResp
+    });
+  } catch (error: any) {
+    console.error('Error in migrate request to Google Sheet:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Migration request failed'
     });
   }
 });
