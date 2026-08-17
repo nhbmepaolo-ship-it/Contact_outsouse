@@ -406,10 +406,10 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredGroupedCompanies.map((group) => {
+          {filteredGroupedCompanies.map((group, groupIdx) => {
             return (
               <div
-                key={group.id}
+                key={group.id || `grp-company-${groupIdx}`}
                 className="bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
               >
                 {/* 1. Company Card Header */}
@@ -446,9 +446,9 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
                 {/* 2. Contacts List inside this Company Frame */}
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
                   <div className="space-y-2.5">
-                    {group.contacts.map((c) => (
+                    {group.contacts.map((c, cIdx) => (
                       <div
-                        key={c.id}
+                        key={c.id ? `${group.id}-${c.id}-${cIdx}` : `${group.id}-staff-${cIdx}`}
                         className="bg-slate-50/90 rounded-lg p-3 border border-slate-200/90 hover:border-blue-200 transition-colors"
                       >
                         {/* Person Name & Role & Actions */}
@@ -518,7 +518,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {c.equipmentList.map((eq, i) => (
                               <span
-                                key={i}
+                                key={`${c.id || cIdx}-eq-${i}-${eq}`}
                                 className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium"
                               >
                                 {eq}
@@ -539,7 +539,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
                       <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
                         {group.allEquipments.map((eq, idx) => (
                           <span
-                            key={idx}
+                            key={`${group.id}-all-eq-${idx}-${eq}`}
                             className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium"
                           >
                             <Tag className="w-2.5 h-2.5 text-blue-600" />

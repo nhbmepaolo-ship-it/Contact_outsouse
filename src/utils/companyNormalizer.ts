@@ -197,6 +197,7 @@ export interface GroupedCompany {
  */
 export function groupContactsByCompany(contacts: CompanyContact[]): GroupedCompany[] {
   const map = new Map<string, GroupedCompany>();
+  let groupCounter = 1;
 
   for (const c of contacts) {
     const rawComp = c.companyName || 'ไม่ระบุบริษัท';
@@ -204,8 +205,9 @@ export function groupContactsByCompany(contacts: CompanyContact[]): GroupedCompa
 
     if (!map.has(key)) {
       const canonicalName = getCanonicalCompanyName(rawComp);
+      const safeId = `grp-${key ? encodeURIComponent(key).slice(0, 40) : 'unknown'}-${groupCounter++}`;
       map.set(key, {
-        id: `grp-${key.replace(/[^a-z0-9]/gi, '_')}`,
+        id: safeId,
         companyKey: key,
         companyName: canonicalName,
         aliases: [rawComp],
