@@ -61,13 +61,28 @@ function cleanupImageCache() {
 setInterval(cleanupImageCache, 60 * 60 * 1000);
 
 function getPublicBaseUrl(req: express.Request): string {
-  const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000') as string;
-  const protoHeader = req.headers['x-forwarded-proto'] as string;
-  let proto = protoHeader || (req.secure ? 'https' : 'http');
-  if (typeof host === 'string' && (host.includes('.run.app') || host.includes('.app') || host.includes('.dev'))) {
-    proto = 'https';
+  const forwardedHost = req.headers['x-forwarded-host'];
+  let host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || (req.headers.host as string) || '';
+
+  // If host is localhost or internal IP, attempt to extract domain from Origin or Referer
+  if (!host || host.includes('localhost') || host.includes('127.0.0.1') || host.includes('0.0.0.0')) {
+    const origin = (req.headers.origin || req.headers.referer || '') as string;
+    if (origin) {
+      try {
+        const u = new URL(origin);
+        if (u.host && !u.host.includes('localhost') && !u.host.includes('127.0.0.1')) {
+          host = u.host;
+        }
+      } catch {}
+    }
   }
-  return `${proto}://${host}`;
+
+  // Fallback to active applet Cloud Run domain if still resolving to localhost
+  if (!host || host.includes('localhost') || host.includes('127.0.0.1') || host.includes('0.0.0.0')) {
+    host = 'ais-dev-6yyvaxuyfshptmt6of36ru-1007627916452.asia-southeast1.run.app';
+  }
+
+  return `https://${host}`;
 }
 
 function storeImageAndGetPublicUrl(photoData: string | undefined, req: express.Request, idHint?: string): string | null {
@@ -444,12 +459,13 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
   const workDetails = record.workDetails || '';
   const notes = record.notes || '';
 
-  // Ensure image URL is valid HTTPS (LINE API strictly requires https://)
+  // Ensure image URL is valid HTTPS and public (LINE API strictly requires public https:// and rejects localhost)
   let photoUrl = imageUrl || (record.cardImageUrl && typeof record.cardImageUrl === 'string' ? record.cardImageUrl : null);
   if (photoUrl) {
     if (photoUrl.startsWith('http://')) {
       photoUrl = photoUrl.replace('http://', 'https://');
-    } else if (!photoUrl.startsWith('https://')) {
+    }
+    if (!photoUrl.startsWith('https://') || photoUrl.includes('localhost') || photoUrl.includes('127.0.0.1') || photoUrl.includes('0.0.0.0')) {
       photoUrl = null;
     }
   }
@@ -739,7 +755,7 @@ app.post('/api/line/notify', async (req, res) => {
 
     // Call LINE Messaging API push endpoint
     const linePushUrl = 'https://api.line.me/v2/bot/message/push';
-    const response = await fetch(linePushUrl, {
+    let response = await fetch(linePushUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -751,7 +767,29 @@ app.post('/api/line/notify', async (req, res) => {
       })
     });
 
-    const data = await response.json().catch(() => ({}));
+    let data = await response.json().catch(() => ({}));
+
+    // Automatic Fallback: If LINE rejected due to image URL validation error, retry without image
+    if (!response.ok && record) {
+      console.warn('LINE push with image failed, retrying Flex Card without hero image...', data);
+      const flexNoImage = createVisitorFlexMessage(record, altText, null);
+      const retryRes = await fetch(linePushUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${channelAccessToken}`
+        },
+        body: JSON.stringify({
+          to: destinationId,
+          messages: [flexNoImage]
+        })
+      });
+      const retryData = await retryRes.json().catch(() => ({}));
+      if (retryRes.ok) {
+        response = retryRes;
+        data = retryData;
+      }
+    }
 
     if (!response.ok) {
       console.error('LINE Messaging API error:', data);
