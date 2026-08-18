@@ -340,18 +340,22 @@ export async function sendLineFlexNotification(
         token: config.channelAccessToken,
         targetId: config.targetId,
         record: record,
-        cardImage: record.cardImage || record.cardImageUrl,
-        photo: record.cardImage || record.cardImageUrl,
         altText: `🔔 ผู้มาติดต่อ: ${record.name} (${record.company}) เข้าพบ ${record.department}`
       })
     });
 
-    const data = await response.json();
+    const resText = await response.text();
+    let data: any = {};
+    try {
+      data = resText ? JSON.parse(resText) : {};
+    } catch {
+      data = { error: resText ? resText.slice(0, 200) : 'ระบบส่งผลลัพธ์ตอบกลับว่างเปล่า' };
+    }
 
     if (!response.ok || !data.success) {
       return {
         success: false,
-        message: data.error || 'Failed to dispatch LINE Flex Message',
+        message: data.error || data.message || 'ส่งการ์ดแจ้งเตือน LINE ไม่สำเร็จ',
         details: data
       };
     }
@@ -397,7 +401,13 @@ export async function testLineFlexNotification(
       })
     });
 
-    const data = await response.json();
+    const resText = await response.text();
+    let data: any = {};
+    try {
+      data = resText ? JSON.parse(resText) : {};
+    } catch {
+      data = { error: resText ? resText.slice(0, 200) : 'ระบบตอบกลับมาว่างเปล่า' };
+    }
 
     if (!response.ok || !data.success) {
       return {
