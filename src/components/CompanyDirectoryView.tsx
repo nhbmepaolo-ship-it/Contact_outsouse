@@ -410,7 +410,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
           {filteredGroupedCompanies.map((group, groupIdx) => {
             return (
               <div
-                key={group.id || `grp-company-${groupIdx}`}
+                key={`${group.id || 'grp-comp'}-${groupIdx}`}
                 className="bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
               >
                 {/* 1. Company Card Header */}

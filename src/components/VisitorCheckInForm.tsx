@@ -35,6 +35,7 @@ import {
 import { StorageService } from '../services/storageService';
 import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 import { sendTelegramNotification, formatVisitorTelegramMessage } from '../services/telegramService';
+import { sendLineFlexNotification } from '../services/lineNotifyService';
 import { GoogleSheetsService } from '../services/googleSheetsService';
 import { compressImage } from '../utils/imageCompressor';
 import { cleanPhoneNumber } from '../utils/phoneFormatter';
@@ -79,9 +80,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [customEquipmentBrand, setCustomEquipmentBrand] = useState('');
   const [cardImage, setCardImage] = useState<string>('');
   const [sendTelegram, setSendTelegram] = useState<boolean>(true);
+  const [sendLine, setSendLine] = useState<boolean>(true);
   const [notes, setNotes] = useState('');
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [lineStatus, setLineStatus] = useState<string | null>(null);
 
   const companyDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -470,10 +473,28 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       });
     } catch {}
 
-    // 2. Parallel Background Sync (Telegram + Google Sheets)
+    // 2. Parallel Background Sync (LINE Flex Card + Telegram + Google Sheets)
     const backgroundTasks: Promise<any>[] = [];
 
-    // Task A: Google Sheets Webhook (Visitor_Logs)
+    // Task A: LINE Messaging API Flex Message Card
+    if (sendLine) {
+      backgroundTasks.push(
+        sendLineFlexNotification(savedRecord).then(res => {
+          if (res.success) {
+            setLineStatus('✅ ส่งการ์ดแจ้งเตือน Flex Card เข้า LINE สำเร็จ');
+          } else {
+            setLineStatus(`⚠️ LINE แจ้งเตือนไม่สำเร็จ: ${res.message || ''}`);
+          }
+          return res;
+        }).catch(err => {
+          setLineStatus(`⚠️ เกิดข้อผิดพลาดส่ง LINE: ${err.message}`);
+        })
+      );
+    } else {
+      setLineStatus(null);
+    }
+
+    // Task B: Google Sheets Webhook (Visitor_Logs)
     backgroundTasks.push(
       GoogleSheetsService.sendRecordToGoogleSheet(savedRecord).catch(err => {
         console.warn('Google Sheets background sync notice:', err);
@@ -481,7 +502,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       })
     );
 
-    // Task B: Telegram Notification (with photo)
+    // Task C: Telegram Notification (with photo)
     if (sendTelegram) {
       const telegramMessage = formatVisitorTelegramMessage(savedRecord);
       backgroundTasks.push(
@@ -501,7 +522,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
         })
       );
     } else {
-      setTelegramStatus('✅ บันทึกข้อมูลเรียบร้อยแล้ว');
+      setTelegramStatus(null);
     }
 
     // Execute in parallel without blocking user interaction
@@ -522,6 +543,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     setCustomWorkType('');
     setSubmittedRecord(null);
     setTelegramStatus(null);
+    setLineStatus(null);
     setFormErrors({});
     setSubmitAttempted(false);
   };
@@ -541,12 +563,25 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
               ระบบได้บันทึกประวัติการเข้าปฏิบัติงานและอัปเดตสมุดติดต่อคู่ค้าเรียบร้อยแล้ว
             </p>
-            {telegramStatus && (
-              <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
-                <Send className="w-3.5 h-3.5 text-blue-600" />
-                <span>{telegramStatus}</span>
-              </div>
-            )}
+            
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {lineStatus && (
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  lineStatus.startsWith('✅') ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  <span>💬</span>
+                  <span>{lineStatus}</span>
+                </div>
+              )}
+              {telegramStatus && (
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  telegramStatus.startsWith('✅') ? 'bg-blue-50 text-blue-800 border border-blue-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  <Send className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{telegramStatus}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Visitor Pass Summary Card */}
@@ -1519,23 +1554,69 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
             </div>
           </div>
 
-          {/* Section 5: Notification & Submission */}
-          <div className="bg-sky-50/70 p-3.5 rounded-xl border border-sky-200/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2">
-              <input
-                id="telegram-toggle"
-                type="checkbox"
-                checked={sendTelegram}
-                onChange={(e) => setSendTelegram(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300 cursor-pointer"
-              />
-              <label htmlFor="telegram-toggle" className="text-xs font-medium text-slate-800 cursor-pointer">
-                ส่งการแจ้งเตือนทันทีไปยัง Telegram Bot (Chat ID: -5275868334)
+          {/* Section 5: Instant Realtime Notifications */}
+          <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🔔</span>
+                <span>ระบบแจ้งเตือนอัตโนมัติแบบทันที (Instant Alerts)</span>
+              </span>
+              <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-200">
+                ⚡ Real-time Push
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              {/* LINE Messaging API Flex Card */}
+              <label
+                htmlFor="line-toggle"
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  sendLine
+                    ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-500'
+                }`}
+              >
+                <input
+                  id="line-toggle"
+                  type="checkbox"
+                  checked={sendLine}
+                  onChange={(e) => setSendLine(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                />
+                <div className="flex flex-col">
+                  <span className="font-bold flex items-center gap-1">
+                    <span>💬</span>
+                    <span>LINE Flex Card Alert</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700/80">ส่งการ์ดข้อมูลติดต่อเข้า LINE OA ทันที</span>
+                </div>
+              </label>
+
+              {/* Telegram Alert */}
+              <label
+                htmlFor="telegram-toggle"
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  sendTelegram
+                    ? 'bg-blue-50/80 border-blue-300 text-blue-950 shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-500'
+                }`}
+              >
+                <input
+                  id="telegram-toggle"
+                  type="checkbox"
+                  checked={sendTelegram}
+                  onChange={(e) => setSendTelegram(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300 cursor-pointer"
+                />
+                <div className="flex flex-col">
+                  <span className="font-bold flex items-center gap-1">
+                    <span>✈️</span>
+                    <span>Telegram Bot Alert</span>
+                  </span>
+                  <span className="text-[10px] text-blue-700/80">ส่งรูปบัตรและรายละเอียดเข้ากลุ่ม BME</span>
+                </div>
               </label>
             </div>
-            <span className="text-[11px] text-sky-800 font-semibold bg-sky-100/80 px-2 py-0.5 rounded-full border border-sky-200/80">
-              ⚡ แจ้งเตือน BME ทันที
-            </span>
           </div>
 
           {/* Submit Button */}
@@ -1544,17 +1625,17 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
               id="submit-visitor-checkin-btn"
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 px-5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 text-white font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer active:scale-[0.99]"
+              className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer active:scale-[0.99]"
             >
               {isSubmitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>กำลังบันทึกข้อมูล...</span>
+                  <span>กำลังบันทึกข้อมูลและส่งการ์ดแจ้งเตือน...</span>
                 </>
               ) : (
                 <>
                   <span>🚀</span>
-                  <span>บันทึกการเข้าติดต่อ & แจ้งเตือน Telegram</span>
+                  <span>บันทึกการเข้าติดต่อ & ส่งการ์ดแจ้งเตือน LINE / Telegram ทันที</span>
                 </>
               )}
             </button>

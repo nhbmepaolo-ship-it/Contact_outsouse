@@ -1,0 +1,406 @@
+import { VisitorRecord, LineConfig } from '../types';
+import { StorageService } from './storageService';
+
+export const DEFAULT_LINE_CONFIG: LineConfig = {
+  channelAccessToken: 'praRVZr/JOYtwRnvljhGtKyAWjoP0o//LeS9fuX7XySUHMJAbZGSZauKom+TeWjh+OrT/OgjECc8ab8jlVfQpDPnWEigY6LUmm8AYdvUonoWRJvxo5ZnsOxVqlnvdyWTCrjEgmvNEGPkjdapdlsl+QdB04t89/1O/w1cDnyilFU=',
+  targetId: 'U55b79f4dd628aa9845a60deba9672717',
+  enabled: true,
+  notifyOnNewVisitor: true,
+  lastTestStatus: null,
+};
+
+/**
+ * Builds a modern, high-contrast, mobile-friendly LINE Flex Message card (Bubble Container)
+ */
+export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText?: string) {
+  const visitorName = record.name || 'ไม่ระบุชื่อ';
+  const company = record.company || 'ไม่ระบุบริษัท';
+  const role = record.contactRole || 'ช่าง/ผู้ติดต่อ';
+  const department = record.department || 'ไม่ระบุแผนก';
+  const workType = record.workType || 'ไม่ระบุลักษณะงาน';
+  const phone = record.phone || '-';
+  const visitorCount = record.visitorCount || 1;
+  const vehicle = `${record.vehicleType || '-'}${record.licensePlate && record.licensePlate !== '-' ? ` (${record.licensePlate})` : ''}`;
+  const timestamp = record.timestamp || new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+  const equipments = Array.isArray(record.equipmentHandled) && record.equipmentHandled.length > 0
+    ? record.equipmentHandled.join(', ')
+    : 'ไม่ได้ระบุเครื่องมือ';
+  const workDetails = record.workDetails || '';
+  const notes = record.notes || '';
+  const photoUrl = record.cardImageUrl || (record.cardImage && record.cardImage.startsWith('http') ? record.cardImage : null);
+
+  const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+  const flexBubble: any = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0F172A',
+      paddingAll: '16px',
+      spacing: 'xs',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          alignItems: 'center',
+          contents: [
+            {
+              type: 'text',
+              text: '🏥 BME VISITOR PASS',
+              color: '#38BDF8',
+              size: 'xs',
+              weight: 'bold',
+              flex: 1
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              backgroundColor: '#065F46',
+              cornerRadius: '8px',
+              paddingStart: '6px',
+              paddingEnd: '6px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              contents: [
+                {
+                  type: 'text',
+                  text: '🟢 เช็คอินเข้าพื้นที่',
+                  color: '#34D399',
+                  size: 'xxs',
+                  weight: 'bold'
+                }
+              ]
+            }
+          ]
+        },
+        {
+          type: 'text',
+          text: '🔔 แจ้งเตือนผู้มาติดต่อฝ่ายเครื่องมือแพทย์',
+          color: '#FFFFFF',
+          size: 'md',
+          weight: 'bold',
+          wrap: true
+        },
+        {
+          type: 'text',
+          text: 'โรงพยาบาลเปาโล / แผนกวิศวกรรมการแพทย์ (BME)',
+          color: '#94A3B8',
+          size: 'xxs'
+        }
+      ]
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#F8FAFC',
+      paddingAll: '14px',
+      spacing: 'sm',
+      contents: [
+        ...(photoUrl ? [{
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#FFFFFF',
+          cornerRadius: '10px',
+          paddingAll: '10px',
+          borderColor: '#CBD5E1',
+          borderWidth: '1px',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              contents: [
+                { type: 'text', text: '📷 รูปถ่ายบัตร/ใบงานที่แนบมา:', size: 'xxs', color: '#475569', weight: 'bold' },
+                { type: 'text', text: 'แตะเพื่อเปิดรูปใหญ่ 🔍', size: 'xxs', color: '#2563EB' }
+              ]
+            },
+            {
+              type: 'image',
+              url: photoUrl,
+              size: 'full',
+              aspectRatio: '16:9',
+              aspectMode: 'cover',
+              cornerRadius: '6px',
+              action: {
+                type: 'uri',
+                label: 'ดูรูปบัตรขนาดเต็ม',
+                uri: photoUrl
+              }
+            }
+          ]
+        }] : []),
+        // 1. Visitor Profile Card
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#FFFFFF',
+          cornerRadius: '10px',
+          paddingAll: '12px',
+          borderColor: '#E2E8F0',
+          borderWidth: '1px',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '👤 ชื่อผู้ติดต่อ:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: visitorName, size: 'xs', color: '#0F172A', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🏢 บริษัท/สังกัด:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: company, size: 'xs', color: '#2563EB', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🏷️ บทบาท:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: role, size: 'xs', color: '#334155', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📞 เบอร์ติดต่อ:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: phone, size: 'xs', color: '#059669', weight: 'bold', flex: 5 }
+              ]
+            }
+          ]
+        },
+        // 2. Visit Details Card
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#FFFFFF',
+          cornerRadius: '10px',
+          paddingAll: '12px',
+          borderColor: '#E2E8F0',
+          borderWidth: '1px',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📍 แผนกที่เข้าพบ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: department, size: 'xs', color: '#0F172A', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🛠️ ลักษณะงาน:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: workType, size: 'xs', color: '#D97706', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            ...(workDetails ? [{
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📝 รายละเอียดงาน:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: workDetails, size: 'xs', color: '#334155', flex: 5, wrap: true }
+              ]
+            }] : []),
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🧰 เครื่องมือแพทย์:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: equipments, size: 'xs', color: '#2563EB', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '👥 จำนวนผู้เข้าพบ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: `${visitorCount} ท่าน`, size: 'xs', color: '#334155', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🚗 ยานพาหนะ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: vehicle, size: 'xs', color: '#334155', flex: 5, wrap: true }
+              ]
+            },
+            ...(notes ? [{
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '💬 หมายเหตุ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: notes, size: 'xs', color: '#475569', flex: 5, wrap: true }
+              ]
+            }] : []),
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '⏰ เวลาที่บันทึก:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: timestamp, size: 'xxs', color: '#64748B', flex: 5 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'xs',
+      backgroundColor: '#FFFFFF',
+      paddingAll: '12px',
+      contents: [
+        ...(cleanPhone ? [{
+          type: 'button',
+          style: 'primary',
+          color: '#06C755',
+          height: 'sm',
+          action: {
+            type: 'uri',
+            label: `📞 โทรหาผู้ติดต่อ (${phone})`,
+            uri: `tel:${cleanPhone}`
+          }
+        }] : [])
+      ]
+    }
+  };
+
+  if (photoUrl) {
+    flexBubble.hero = {
+      type: 'image',
+      url: photoUrl,
+      size: 'full',
+      aspectRatio: '16:9',
+      aspectMode: 'cover',
+      action: {
+        type: 'uri',
+        label: 'ดูรูปบัตรขนาดเต็ม',
+        uri: photoUrl
+      }
+    };
+  }
+
+  return {
+    type: 'flex',
+    altText: customAltText || `🔔 แจ้งเตือนผู้มาติดต่อ: ${visitorName} (${company}) เข้าพบ ${department}`,
+    contents: flexBubble
+  };
+}
+
+/**
+ * Sends a visitor notification Flex Card via LINE Messaging API
+ */
+export async function sendLineFlexNotification(
+  record: VisitorRecord,
+  customConfig?: Partial<LineConfig>
+): Promise<{ success: boolean; message: string; details?: any }> {
+  try {
+    const config = { ...StorageService.getLineConfig(), ...(customConfig || {}) };
+
+    if (!config.enabled) {
+      return { success: false, message: 'LINE notifications are currently disabled in settings' };
+    }
+
+    if (!config.channelAccessToken || !config.targetId) {
+      return { success: false, message: 'Missing LINE Channel Access Token or Target User ID' };
+    }
+
+    // Call server proxy endpoint to securely dispatch LINE push message
+    const response = await fetch('/api/line/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: config.channelAccessToken,
+        targetId: config.targetId,
+        record: record,
+        cardImage: record.cardImage || record.cardImageUrl,
+        photo: record.cardImage || record.cardImageUrl,
+        altText: `🔔 ผู้มาติดต่อ: ${record.name} (${record.company}) เข้าพบ ${record.department}`
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        message: data.error || 'Failed to dispatch LINE Flex Message',
+        details: data
+      };
+    }
+
+    return {
+      success: true,
+      message: 'LINE Flex Message notification dispatched successfully!',
+      details: data
+    };
+  } catch (err: any) {
+    console.error('Error in sendLineFlexNotification:', err);
+    return {
+      success: false,
+      message: err.message || 'Network error while sending LINE notification'
+    };
+  }
+}
+
+/**
+ * Sends a test LINE Flex notification to verify Channel Access Token and Target User ID
+ */
+export async function testLineFlexNotification(
+  token: string,
+  targetId: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cleanToken = token.trim();
+    const cleanTargetId = targetId.trim();
+
+    if (!cleanToken) {
+      return { success: false, message: 'กรุณากรอก LINE Channel Access Token' };
+    }
+    if (!cleanTargetId) {
+      return { success: false, message: 'กรุณากรอก LINE Target User ID / Group ID (เช่น U55b79f4...)' };
+    }
+
+    const response = await fetch('/api/line/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: cleanToken,
+        targetId: cleanTargetId
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        message: data.error || 'ไม่สามารถส่งข้อความทดสอบ LINE ได้ กรุณาตรวจสอบ Token และ User ID'
+      };
+    }
+
+    return {
+      success: true,
+      message: '✅ ส่งการ์ดแจ้งเตือนทดสอบเข้า LINE เรียบร้อยแล้ว! ตรวจสอบข้อความในการ์ดบนแอปพลิเคชัน LINE ได้เลย'
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์ LINE'
+    };
+  }
+}

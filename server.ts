@@ -22,6 +22,8 @@ const DEFAULT_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8344422414:AAER_-ry
 const DEFAULT_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '-5275868334';
 const DEFAULT_SHEET_ID = process.env.GOOGLE_SHEET_ID || '1ry7U0ZSuMT5yYYkDpRHukuYLQQrPEfy4jP3GnpxyJM8';
 const DEFAULT_SHEET_WEBHOOK_URL = process.env.GOOGLE_SHEET_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbwhVd6WgGXlJYk_u8LGNuVoRXwdANYy980C7edxKtVOnPSoFlrOAxdQgASuoLg-hbiW/exec';
+const DEFAULT_LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || 'praRVZr/JOYtwRnvljhGtKyAWjoP0o//LeS9fuX7XySUHMJAbZGSZauKom+TeWjh+OrT/OgjECc8ab8jlVfQpDPnWEigY6LUmm8AYdvUonoWRJvxo5ZnsOxVqlnvdyWTCrjEgmvNEGPkjdapdlsl+QdB04t89/1O/w1cDnyilFU=';
+const DEFAULT_LINE_TARGET_ID = process.env.LINE_TARGET_ID || 'U55b79f4dd628aa9845a60deba9672717';
 
 // ================= PERSISTENT SETTINGS STORAGE =================
 const DATA_DIR = path.join(process.cwd(), 'data_store');
@@ -32,7 +34,73 @@ interface ServerSettings {
   telegramChatId: string;
   sheetId: string;
   sheetWebhookUrl: string;
+  lineToken: string;
+  lineTargetId: string;
   lastUpdated?: string;
+}
+
+// ================= IMAGE CACHE & HOSTING FOR LINE / TELEGRAM NOTIFICATIONS =================
+interface StoredImage {
+  id: string;
+  dataBuffer: Buffer;
+  contentType: string;
+  createdAt: number;
+}
+const imageCache = new Map<string, StoredImage>();
+
+// Clean up old images (> 7 days) periodically
+function cleanupImageCache() {
+  const now = Date.now();
+  const maxAge = 7 * 24 * 60 * 60 * 1000;
+  for (const [key, item] of imageCache.entries()) {
+    if (now - item.createdAt > maxAge) {
+      imageCache.delete(key);
+    }
+  }
+}
+setInterval(cleanupImageCache, 60 * 60 * 1000);
+
+function getPublicBaseUrl(req: express.Request): string {
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000') as string;
+  const protoHeader = req.headers['x-forwarded-proto'] as string;
+  let proto = protoHeader || (req.secure ? 'https' : 'http');
+  if (typeof host === 'string' && (host.includes('.run.app') || host.includes('.app') || host.includes('.dev'))) {
+    proto = 'https';
+  }
+  return `${proto}://${host}`;
+}
+
+function storeImageAndGetPublicUrl(photoData: string | undefined, req: express.Request, idHint?: string): string | null {
+  if (!photoData || typeof photoData !== 'string') return null;
+  const clean = photoData.trim();
+  if (!clean) return null;
+
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
+  }
+
+  if (clean.startsWith('data:image/')) {
+    try {
+      const match = clean.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        const contentType = match[1];
+        const base64Data = match[2];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const id = idHint ? `img_${idHint.replace(/[^a-zA-Z0-9_-]/g, '_')}` : `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        imageCache.set(id, {
+          id,
+          dataBuffer: buffer,
+          contentType: contentType || 'image/jpeg',
+          createdAt: Date.now()
+        });
+        const baseUrl = getPublicBaseUrl(req);
+        return `${baseUrl}/api/images/${id}.jpg`;
+      }
+    } catch (e) {
+      console.warn('Failed to parse and store base64 image:', e);
+    }
+  }
+  return null;
 }
 
 function loadServerSettings(): ServerSettings {
@@ -48,6 +116,8 @@ function loadServerSettings(): ServerSettings {
         telegramChatId: parsed.telegramChatId || DEFAULT_CHAT_ID,
         sheetId: parsed.sheetId || DEFAULT_SHEET_ID,
         sheetWebhookUrl: parsed.sheetWebhookUrl || DEFAULT_SHEET_WEBHOOK_URL,
+        lineToken: parsed.lineToken || DEFAULT_LINE_TOKEN,
+        lineTargetId: parsed.lineTargetId || DEFAULT_LINE_TARGET_ID,
         lastUpdated: parsed.lastUpdated || new Date().toISOString()
       };
     }
@@ -59,6 +129,8 @@ function loadServerSettings(): ServerSettings {
     telegramChatId: DEFAULT_CHAT_ID,
     sheetId: DEFAULT_SHEET_ID,
     sheetWebhookUrl: DEFAULT_SHEET_WEBHOOK_URL,
+    lineToken: DEFAULT_LINE_TOKEN,
+    lineTargetId: DEFAULT_LINE_TARGET_ID,
     lastUpdated: new Date().toISOString()
   };
 }
@@ -102,6 +174,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     telegramConfigured: !!(cachedSettings.telegramToken && cachedSettings.telegramChatId),
+    lineConfigured: !!(cachedSettings.lineToken && cachedSettings.lineTargetId),
     sheetId: cachedSettings.sheetId || DEFAULT_SHEET_ID,
     sheetWebhookConfigured: !!cachedSettings.sheetWebhookUrl,
     hasGeminiKey: !!process.env.GEMINI_API_KEY,
@@ -117,14 +190,30 @@ app.get('/api/settings', (req, res) => {
   });
 });
 
+// Endpoint to serve attached visitor card images to LINE / Telegram / external viewers
+app.get('/api/images/:id', (req, res) => {
+  const rawId = req.params.id || '';
+  const cleanId = rawId.replace(/\.(jpg|jpeg|png|webp)$/i, '');
+  const found = imageCache.get(cleanId);
+  if (!found) {
+    return res.status(404).send('Image not found or expired');
+  }
+  res.setHeader('Content-Type', found.contentType || 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.send(found.dataBuffer);
+});
+
 app.post('/api/settings', (req, res) => {
   try {
-    const { telegramToken, telegramChatId, sheetId, sheetWebhookUrl } = req.body;
+    const { telegramToken, telegramChatId, sheetId, sheetWebhookUrl, lineToken, lineTargetId } = req.body;
     const updated = saveServerSettings({
       ...(telegramToken !== undefined && { telegramToken: String(telegramToken).trim() }),
       ...(telegramChatId !== undefined && { telegramChatId: String(telegramChatId).trim() }),
       ...(sheetId !== undefined && { sheetId: String(sheetId).trim() }),
       ...(sheetWebhookUrl !== undefined && { sheetWebhookUrl: String(sheetWebhookUrl).trim() }),
+      ...(lineToken !== undefined && { lineToken: String(lineToken).trim() }),
+      ...(lineTargetId !== undefined && { lineTargetId: String(lineTargetId).trim() }),
     });
     return res.json({
       success: true,
@@ -331,6 +420,452 @@ app.post('/api/telegram/test', async (req, res) => {
     }
 
     return res.json({ success: true, message: 'Test message sent successfully', result: data.result });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ================= LINE MESSAGING API NOTIFICATIONS =================
+
+// Helper function to build a modern, high-contrast, mobile-friendly LINE Flex Message card
+function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: string | null) {
+  const visitorName = record.name || 'ไม่ระบุชื่อ';
+  const company = record.company || 'ไม่ระบุบริษัท';
+  const role = record.contactRole || 'ช่าง/ผู้ติดต่อ';
+  const department = record.department || 'ไม่ระบุแผนก';
+  const workType = record.workType || 'ไม่ระบุลักษณะงาน';
+  const phone = record.phone || '-';
+  const visitorCount = record.visitorCount || 1;
+  const vehicle = `${record.vehicleType || '-'}${record.licensePlate && record.licensePlate !== '-' ? ` (${record.licensePlate})` : ''}`;
+  const timestamp = record.timestamp || new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+  const equipments = Array.isArray(record.equipmentHandled) && record.equipmentHandled.length > 0
+    ? record.equipmentHandled.join(', ')
+    : 'ไม่มี/ไม่ได้ระบุ';
+  const workDetails = record.workDetails || '';
+  const notes = record.notes || '';
+
+  const photoUrl = imageUrl || (record.cardImageUrl && (record.cardImageUrl.startsWith('http://') || record.cardImageUrl.startsWith('https://')) ? record.cardImageUrl : null);
+  const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+  const flexBubble: any = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0F172A',
+      paddingAll: '16px',
+      spacing: 'xs',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          alignItems: 'center',
+          contents: [
+            {
+              type: 'text',
+              text: '🏥 BME VISITOR ALERT',
+              color: '#38BDF8',
+              size: 'xs',
+              weight: 'bold',
+              flex: 1
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              backgroundColor: '#065F46',
+              cornerRadius: '8px',
+              paddingStart: '6px',
+              paddingEnd: '6px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              contents: [
+                {
+                  type: 'text',
+                  text: '🟢 เช็คอินเข้าพื้นที่',
+                  color: '#34D399',
+                  size: 'xxs',
+                  weight: 'bold'
+                }
+              ]
+            }
+          ]
+        },
+        {
+          type: 'text',
+          text: '🔔 แจ้งเตือนผู้มาติดต่อ',
+          color: '#FFFFFF',
+          size: 'md',
+          weight: 'bold',
+          wrap: true
+        },
+        {
+          type: 'text',
+          text: 'ฝ่ายวิศวกรรมการแพทย์ (Biomedical Engineering)',
+          color: '#94A3B8',
+          size: 'xxs'
+        }
+      ]
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#F8FAFC',
+      paddingAll: '14px',
+      spacing: 'sm',
+      contents: [
+        ...(photoUrl ? [{
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#FFFFFF',
+          cornerRadius: '10px',
+          paddingAll: '10px',
+          borderColor: '#CBD5E1',
+          borderWidth: '1px',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              contents: [
+                { type: 'text', text: '📷 รูปถ่ายบัตร/ใบงานที่แนบมา:', size: 'xxs', color: '#475569', weight: 'bold' },
+                { type: 'text', text: 'แตะเพื่อเปิดรูปใหญ่ 🔍', size: 'xxs', color: '#2563EB' }
+              ]
+            },
+            {
+              type: 'image',
+              url: photoUrl,
+              size: 'full',
+              aspectRatio: '16:9',
+              aspectMode: 'cover',
+              cornerRadius: '6px',
+              action: {
+                type: 'uri',
+                label: 'ดูรูปบัตรขนาดเต็ม',
+                uri: photoUrl
+              }
+            }
+          ]
+        }] : []),
+        // Visitor profile card box
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#FFFFFF',
+          cornerRadius: '10px',
+          paddingAll: '12px',
+          borderColor: '#E2E8F0',
+          borderWidth: '1px',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '👤 ชื่อผู้ติดต่อ:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: visitorName, size: 'xs', color: '#0F172A', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🏢 บริษัท/สังกัด:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: company, size: 'xs', color: '#2563EB', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🏷️ บทบาท:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: role, size: 'xs', color: '#334155', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📞 เบอร์ติดต่อ:', size: 'xs', color: '#64748B', flex: 3 },
+                { type: 'text', text: phone, size: 'xs', color: '#059669', weight: 'bold', flex: 5 }
+              ]
+            }
+          ]
+        },
+        // Visit Details box
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#FFFFFF',
+          cornerRadius: '10px',
+          paddingAll: '12px',
+          borderColor: '#E2E8F0',
+          borderWidth: '1px',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📍 แผนกที่เข้าพบ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: department, size: 'xs', color: '#0F172A', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🛠️ ลักษณะงาน:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: workType, size: 'xs', color: '#D97706', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            ...(workDetails ? [{
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📝 รายละเอียด:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: workDetails, size: 'xs', color: '#334155', flex: 5, wrap: true }
+              ]
+            }] : []),
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🧰 เครื่องมือแพทย์:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: equipments, size: 'xs', color: '#2563EB', weight: 'bold', flex: 5, wrap: true }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '👥 จำนวนผู้เข้าพบ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: `${visitorCount} ท่าน`, size: 'xs', color: '#334155', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '🚗 ยานพาหนะ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: vehicle, size: 'xs', color: '#334155', flex: 5, wrap: true }
+              ]
+            },
+            ...(notes ? [{
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '💬 หมายเหตุ:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: notes, size: 'xs', color: '#475569', flex: 5, wrap: true }
+              ]
+            }] : []),
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '⏰ เวลาที่บันทึก:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: timestamp, size: 'xxs', color: '#64748B', flex: 5 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'xs',
+      backgroundColor: '#FFFFFF',
+      paddingAll: '12px',
+      contents: [
+        ...(cleanPhone ? [{
+          type: 'button',
+          style: 'primary',
+          color: '#06C755',
+          height: 'sm',
+          action: {
+            type: 'uri',
+            label: `📞 โทรหาผู้ติดต่อ (${phone})`,
+            uri: `tel:${cleanPhone}`
+          }
+        }] : [])
+      ]
+    }
+  };
+
+  // If photoUrl is available, add a top hero section
+  if (photoUrl) {
+    flexBubble.hero = {
+      type: 'image',
+      url: photoUrl,
+      size: 'full',
+      aspectRatio: '16:9',
+      aspectMode: 'cover',
+      action: {
+        type: 'uri',
+        label: 'ดูรูปบัตรขนาดเต็ม',
+        uri: photoUrl
+      }
+    };
+  }
+
+  return {
+    type: 'flex',
+    altText: altText || `🔔 แจ้งเตือนผู้มาติดต่อ: ${visitorName} (${company}) เข้าพบแผนก ${department}`,
+    contents: flexBubble
+  };
+}
+
+// Push LINE Flex message to user / group
+app.post('/api/line/notify', async (req, res) => {
+  try {
+    const { token, targetId, record, cardImage, photo, flexMessage, messages, altText } = req.body;
+    const channelAccessToken = (token || cachedSettings.lineToken || DEFAULT_LINE_TOKEN || '').trim();
+    const destinationId = (targetId || cachedSettings.lineTargetId || DEFAULT_LINE_TARGET_ID || '').trim();
+
+    if (!channelAccessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'LINE Channel Access Token is required'
+      });
+    }
+
+    if (!destinationId) {
+      return res.status(400).json({
+        success: false,
+        error: 'LINE Target User ID / Group ID is required'
+      });
+    }
+
+    // Process attached image if present
+    const rawImage = cardImage || photo || record?.cardImage || record?.cardImageUrl;
+    const recordId = record?.id || `rec_${Date.now()}`;
+    const hostedImageUrl = storeImageAndGetPublicUrl(rawImage, req, recordId);
+
+    let payloadMessages: any[] = [];
+
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      payloadMessages = messages;
+    } else if (flexMessage) {
+      payloadMessages = [flexMessage];
+    } else if (record) {
+      const builtFlex = createVisitorFlexMessage(record, altText, hostedImageUrl);
+      payloadMessages = [builtFlex];
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Either record, flexMessage, or messages array is required'
+      });
+    }
+
+    // Call LINE Messaging API push endpoint
+    const linePushUrl = 'https://api.line.me/v2/bot/message/push';
+    const response = await fetch(linePushUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${channelAccessToken}`
+      },
+      body: JSON.stringify({
+        to: destinationId,
+        messages: payloadMessages
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      console.error('LINE Messaging API error:', data);
+      return res.status(response.status).json({
+        success: false,
+        error: data.message || data.details?.[0]?.message || 'LINE Push API request failed',
+        details: data
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'LINE Flex notification sent successfully',
+      targetId: destinationId,
+      hasAttachedPhoto: !!hostedImageUrl,
+      imageUrl: hostedImageUrl,
+      result: data
+    });
+  } catch (error: any) {
+    console.error('Error sending LINE notification:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error while dispatching LINE message'
+    });
+  }
+});
+
+// Test LINE Connection & Flex Card Preview
+app.post('/api/line/test', async (req, res) => {
+  try {
+    const { token, targetId } = req.body;
+    const channelAccessToken = (token || cachedSettings.lineToken || DEFAULT_LINE_TOKEN || '').trim();
+    const destinationId = (targetId || cachedSettings.lineTargetId || DEFAULT_LINE_TARGET_ID || '').trim();
+
+    if (!channelAccessToken || !destinationId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing LINE Channel Access Token or Target User ID'
+      });
+    }
+
+    const testRecord = {
+      name: 'ทดสอบระบบ วิศวกรการแพทย์',
+      company: 'บริษัท เมดิคอล เซอร์วิส จำกัด',
+      phone: '081-234-5678',
+      department: 'Biomedical Engineering (BME)',
+      workType: 'ทดสอบการแจ้งเตือน LINE Flex Message',
+      visitorCount: 1,
+      vehicleType: 'รถยนต์ส่วนบุคคล',
+      licensePlate: 'กข 9999',
+      equipmentHandled: ['DEFIBRILLATOR [Brand: PHILIPS]', 'PATIENT MONITOR [Brand: MINDRAY]'],
+      contactRole: 'วิศวกรบริการ',
+      workDetails: 'ทดสอบส่งการ์ดแจ้งเตือนแบบ Flex Message เข้า LINE Official Account / ผู้ใช้งาน',
+      cardImageUrl: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&q=80',
+      timestamp: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+    };
+
+    const flexCard = createVisitorFlexMessage(
+      testRecord,
+      '🧪 ทดสอบการเชื่อมต่อระบบแจ้งเตือน LINE Messaging API (BME Check-In)',
+      testRecord.cardImageUrl
+    );
+
+    const linePushUrl = 'https://api.line.me/v2/bot/message/push';
+    const response = await fetch(linePushUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${channelAccessToken}`
+      },
+      body: JSON.stringify({
+        to: destinationId,
+        messages: [flexCard]
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        error: data.message || data.details?.[0]?.message || 'LINE API connection failed',
+        details: data
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'LINE Flex Message test card dispatched successfully!',
+      targetId: destinationId
+    });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }

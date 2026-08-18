@@ -3,7 +3,8 @@ import {
   CompanyContact,
   DepartmentInfo,
   EquipmentInfo,
-  TelegramConfig
+  TelegramConfig,
+  LineConfig
 } from '../types';
 import {
   INITIAL_VISITOR_RECORDS,
@@ -15,6 +16,7 @@ import { INITIAL_COMPANIES_FROM_SHEET } from '../data/sheetCompanies';
 import { INITIAL_COMPANY_EN_MAP } from '../data/companyEnglishMap';
 import { applyImageRetentionPolicy } from '../utils/imageRetention';
 import { DEFAULT_TELEGRAM_CONFIG } from './telegramService';
+import { DEFAULT_LINE_CONFIG } from './lineNotifyService';
 import { cleanPhoneNumber } from '../utils/phoneFormatter';
 
 const STORAGE_KEYS = {
@@ -25,6 +27,7 @@ const STORAGE_KEYS = {
   SHEET_COMPANIES: 'bme_sheet_companies_v1',
   COMPANY_EN_MAP: 'bme_company_en_map_v1',
   TELEGRAM: 'bme_telegram_config_v2',
+  LINE: 'bme_line_config_v1',
   ADMIN_AUTH: 'bme_admin_authenticated_v2',
 };
 
@@ -66,9 +69,28 @@ export class StorageService {
         return initial;
       }
       const parsed: VisitorRecord[] = JSON.parse(data);
-      // Filter out any dummy test rows that may have persisted in older sessions
-      const clean = parsed.filter(r => !isDummyOrPurged(r.company, r.name));
-      if (clean.length !== parsed.length) {
+      // Filter out any dummy test rows and guarantee unique record IDs
+      const seenIds = new Set<string>();
+      let hasMutated = false;
+      const clean: VisitorRecord[] = [];
+
+      for (let i = 0; i < parsed.length; i++) {
+        const r = parsed[i];
+        if (!r || isDummyOrPurged(r.company, r.name)) {
+          hasMutated = true;
+          continue;
+        }
+
+        let uniqueId = (r.id || '').trim();
+        if (!uniqueId || seenIds.has(uniqueId)) {
+          hasMutated = true;
+          uniqueId = `${uniqueId || 'vis'}-${i + 1}-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+        seenIds.add(uniqueId);
+        clean.push({ ...r, id: uniqueId });
+      }
+
+      if (hasMutated || clean.length !== parsed.length) {
         this.saveVisitorRecords(clean);
       }
       // Run retention policy whenever reading
@@ -84,7 +106,17 @@ export class StorageService {
 
   static saveVisitorRecords(records: VisitorRecord[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.VISITORS, JSON.stringify(records));
+      // Ensure unique IDs before persisting
+      const seenIds = new Set<string>();
+      const sanitized = records.map((r, idx) => {
+        let uniqueId = (r.id || '').trim();
+        if (!uniqueId || seenIds.has(uniqueId)) {
+          uniqueId = `${uniqueId || 'vis'}-${idx + 1}-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+        seenIds.add(uniqueId);
+        return { ...r, id: uniqueId };
+      });
+      localStorage.setItem(STORAGE_KEYS.VISITORS, JSON.stringify(sanitized));
     } catch (e) {
       console.error('Error saving visitor records:', e);
     }
@@ -461,6 +493,25 @@ export class StorageService {
 
   static saveTelegramConfig(config: TelegramConfig): void {
     localStorage.setItem(STORAGE_KEYS.TELEGRAM, JSON.stringify(config));
+  }
+
+  // ================= LINE MESSAGING API CONFIG =================
+
+  static getLineConfig(): LineConfig {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.LINE);
+      if (!data) {
+        this.saveLineConfig(DEFAULT_LINE_CONFIG);
+        return DEFAULT_LINE_CONFIG;
+      }
+      return { ...DEFAULT_LINE_CONFIG, ...JSON.parse(data) };
+    } catch {
+      return DEFAULT_LINE_CONFIG;
+    }
+  }
+
+  static saveLineConfig(config: LineConfig): void {
+    localStorage.setItem(STORAGE_KEYS.LINE, JSON.stringify(config));
   }
 
   // ================= ADMIN AUTHENTICATION STATE =================

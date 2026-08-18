@@ -1078,6 +1078,7 @@ export class GoogleSheetsService {
       if (colMap.id === -1) colMap.id = 14;
 
       const parsedRecords: VisitorRecord[] = [];
+      const seenRowIds = new Set<string>();
 
       for (let i = 1; i < lines.length; i++) {
         const cols = parseCsvLine(lines[i]);
@@ -1117,7 +1118,12 @@ export class GoogleSheetsService {
         const eqStr = cols[colMap.eq]?.trim() || '-';
         const eqList = eqStr && eqStr !== '-' ? eqStr.split(',').map(s => s.trim()).filter(Boolean) : [];
         const notes = cols[colMap.notes]?.trim() || '-';
-        const recordId = cols[colMap.id]?.trim() || `sheet-row-${i}`;
+        
+        let recordId = cols[colMap.id]?.trim() || `sheet-row-${i}`;
+        if (seenRowIds.has(recordId)) {
+          recordId = `${recordId}-${i}-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+        seenRowIds.add(recordId);
 
         parsedRecords.push({
           id: recordId,

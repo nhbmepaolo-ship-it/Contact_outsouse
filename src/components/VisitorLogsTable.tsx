@@ -312,12 +312,12 @@ export const VisitorLogsTable: React.FC<VisitorLogsTableProps> = ({
                   </td>
                 </tr>
               ) : (
-                paginatedRecords.map((r) => {
+                paginatedRecords.map((r, idx) => {
                   const daysLeft = getDaysRemaining(r);
                   const isExpired = r.isImageExpired || daysLeft === 0;
 
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={`${r.id || 'vis'}-${idx}`} className="hover:bg-slate-50 transition-colors">
                       {/* Timestamp & Name */}
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-slate-900 text-xs">{r.name}</div>
