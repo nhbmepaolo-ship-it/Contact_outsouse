@@ -89,6 +89,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setWebhookUrl(currentUrl);
       setTempWebhookUrl(currentUrl);
       setSheetId(GoogleSheetsService.getSheetId());
+      setLineConfig(StorageService.getLineConfig());
     });
   }, []);
 
@@ -562,7 +563,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    LINE Target User ID / Group ID (ผู้รับการ์ด)
+                    LINE Target User ID (ส่งหาบุคคลคนเดียว 1-on-1)
                   </label>
                   <input
                     id="line-target-id-input"
@@ -573,7 +574,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="w-full px-3.5 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-none text-slate-900 transition-all"
                   />
                   <p className="text-[11px] text-slate-500 mt-1">
-                    👤 User ID ของท่านขึ้นต้นด้วยตัว <code>U...</code> (หรือ Group ID ขึ้นต้นด้วย <code>C...</code>)
+                    👤 <b>ส่งให้บุคคลคนเดียว (1-on-1):</b> ใช้ User ID ขึ้นต้นด้วย <code>U...</code> (เช่น <code>U55b79f4dd628aa9845a60deba9672717</code>) *ผู้รับต้องเพิ่มเพื่อนกับบอทก่อน
                   </p>
                 </div>
               </div>
@@ -686,10 +687,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </span>
                   </div>
                   <h4 className="text-xs font-bold text-white">
-                    🔔 แจ้งเตือนผู้มาติดต่อฝ่ายเครื่องมือแพทย์
+                    🔔 แจ้งเตือนผู้มาติดต่อแผนกวิศวกรรมการแพทย์ (BME)
                   </h4>
                   <p className="text-[9px] text-slate-400">
-                    โรงพยาบาลเปาโล / แผนกวิศวกรรมการแพทย์ (BME)
+                    โรงพยาบาลพญาไทพหลโยธิน
                   </p>
                 </div>
 

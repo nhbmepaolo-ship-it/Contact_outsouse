@@ -27,9 +27,17 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
     : 'ไม่ได้ระบุเครื่องมือ';
   const workDetails = record.workDetails || '';
   const notes = record.notes || '';
-  const photoUrl = record.cardImageUrl || (record.cardImage && record.cardImage.startsWith('http') ? record.cardImage : null);
+  let photoUrl = record.cardImageUrl || (record.cardImage && typeof record.cardImage === 'string' ? record.cardImage : null);
+  if (photoUrl) {
+    if (photoUrl.startsWith('http://')) {
+      photoUrl = photoUrl.replace('http://', 'https://');
+    } else if (!photoUrl.startsWith('https://')) {
+      photoUrl = null;
+    }
+  }
 
   const cleanPhone = phone.replace(/[^0-9]/g, '');
+  const hasValidPhone = cleanPhone.length >= 8;
 
   const flexBubble: any = {
     type: 'bubble',
@@ -38,7 +46,7 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
       type: 'box',
       layout: 'vertical',
       backgroundColor: '#0F172A',
-      paddingAll: '16px',
+      paddingAll: 'lg',
       spacing: 'xs',
       contents: [
         {
@@ -58,11 +66,9 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
               type: 'box',
               layout: 'horizontal',
               backgroundColor: '#065F46',
-              cornerRadius: '8px',
-              paddingStart: '6px',
-              paddingEnd: '6px',
-              paddingTop: '2px',
-              paddingBottom: '2px',
+              cornerRadius: 'sm',
+              paddingStart: 'xs',
+              paddingEnd: 'xs',
               contents: [
                 {
                   type: 'text',
@@ -77,7 +83,7 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
         },
         {
           type: 'text',
-          text: '🔔 แจ้งเตือนผู้มาติดต่อฝ่ายเครื่องมือแพทย์',
+          text: '🔔 แจ้งเตือนผู้มาติดต่อแผนกวิศวกรรมการแพทย์ (BME)',
           color: '#FFFFFF',
           size: 'md',
           weight: 'bold',
@@ -85,7 +91,7 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
         },
         {
           type: 'text',
-          text: 'โรงพยาบาลเปาโล / แผนกวิศวกรรมการแพทย์ (BME)',
+          text: 'โรงพยาบาลพญาไทพหลโยธิน',
           color: '#94A3B8',
           size: 'xxs'
         }
@@ -102,10 +108,10 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
           type: 'box',
           layout: 'vertical',
           backgroundColor: '#FFFFFF',
-          cornerRadius: '10px',
-          paddingAll: '10px',
+          cornerRadius: 'md',
+          paddingAll: 'sm',
           borderColor: '#CBD5E1',
-          borderWidth: '1px',
+          borderWidth: 'light',
           spacing: 'xs',
           contents: [
             {
@@ -124,10 +130,9 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
               size: 'full',
               aspectRatio: '16:9',
               aspectMode: 'cover',
-              cornerRadius: '6px',
+              cornerRadius: 'xs',
               action: {
                 type: 'uri',
-                label: 'ดูรูปบัตรขนาดเต็ม',
                 uri: photoUrl
               }
             }
@@ -138,10 +143,10 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
           type: 'box',
           layout: 'vertical',
           backgroundColor: '#FFFFFF',
-          cornerRadius: '10px',
-          paddingAll: '12px',
+          cornerRadius: 'md',
+          paddingAll: 'md',
           borderColor: '#E2E8F0',
-          borderWidth: '1px',
+          borderWidth: 'light',
           spacing: 'xs',
           contents: [
             {
@@ -183,10 +188,10 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
           type: 'box',
           layout: 'vertical',
           backgroundColor: '#FFFFFF',
-          cornerRadius: '10px',
-          paddingAll: '12px',
+          cornerRadius: 'md',
+          paddingAll: 'md',
           borderColor: '#E2E8F0',
-          borderWidth: '1px',
+          borderWidth: 'light',
           spacing: 'xs',
           contents: [
             {
@@ -257,26 +262,28 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
         }
       ]
     },
-    footer: {
+  if (hasValidPhone) {
+    flexBubble.footer = {
       type: 'box',
       layout: 'vertical',
       spacing: 'xs',
       backgroundColor: '#FFFFFF',
-      paddingAll: '12px',
+      paddingAll: 'md',
       contents: [
-        ...(cleanPhone ? [{
+        {
           type: 'button',
           style: 'primary',
           color: '#06C755',
           height: 'sm',
           action: {
             type: 'uri',
-            label: `📞 โทรหาผู้ติดต่อ (${phone})`,
+            label: '📞 โทรหาผู้ติดต่อ',
             uri: `tel:${cleanPhone}`
           }
-        }] : [])
+        }
       ]
-    }
+    };
+  }
   };
 
   if (photoUrl) {
@@ -288,7 +295,6 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
       aspectMode: 'cover',
       action: {
         type: 'uri',
-        label: 'ดูรูปบัตรขนาดเต็ม',
         uri: photoUrl
       }
     };

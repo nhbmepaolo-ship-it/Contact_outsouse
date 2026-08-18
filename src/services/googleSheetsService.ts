@@ -514,6 +514,16 @@ export class GoogleSheetsService {
           const id = json.settings.sheetId || DEFAULT_SHEET_ID;
           this.cachedSheetId = id;
           localStorage.setItem(STORAGE_KEYS.SHEET_ID, id);
+
+          if (json.settings.lineToken || json.settings.lineTargetId) {
+            const currentLine = StorageService.getLineConfig();
+            StorageService.saveLineConfig({
+              ...currentLine,
+              channelAccessToken: json.settings.lineToken || currentLine.channelAccessToken,
+              targetId: json.settings.lineTargetId || currentLine.targetId,
+              enabled: true
+            });
+          }
         }
       }
     } catch (e) {

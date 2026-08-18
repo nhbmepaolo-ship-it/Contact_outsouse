@@ -444,8 +444,18 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
   const workDetails = record.workDetails || '';
   const notes = record.notes || '';
 
-  const photoUrl = imageUrl || (record.cardImageUrl && (record.cardImageUrl.startsWith('http://') || record.cardImageUrl.startsWith('https://')) ? record.cardImageUrl : null);
+  // Ensure image URL is valid HTTPS (LINE API strictly requires https://)
+  let photoUrl = imageUrl || (record.cardImageUrl && typeof record.cardImageUrl === 'string' ? record.cardImageUrl : null);
+  if (photoUrl) {
+    if (photoUrl.startsWith('http://')) {
+      photoUrl = photoUrl.replace('http://', 'https://');
+    } else if (!photoUrl.startsWith('https://')) {
+      photoUrl = null;
+    }
+  }
+
   const cleanPhone = phone.replace(/[^0-9]/g, '');
+  const hasValidPhone = cleanPhone.length >= 8;
 
   const flexBubble: any = {
     type: 'bubble',
@@ -454,7 +464,7 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
       type: 'box',
       layout: 'vertical',
       backgroundColor: '#0F172A',
-      paddingAll: '16px',
+      paddingAll: 'lg',
       spacing: 'xs',
       contents: [
         {
@@ -474,11 +484,9 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
               type: 'box',
               layout: 'horizontal',
               backgroundColor: '#065F46',
-              cornerRadius: '8px',
-              paddingStart: '6px',
-              paddingEnd: '6px',
-              paddingTop: '2px',
-              paddingBottom: '2px',
+              cornerRadius: 'sm',
+              paddingStart: 'xs',
+              paddingEnd: 'xs',
               contents: [
                 {
                   type: 'text',
@@ -493,7 +501,7 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
         },
         {
           type: 'text',
-          text: '🔔 แจ้งเตือนผู้มาติดต่อ',
+          text: '🔔 แจ้งเตือนผู้มาติดต่อแผนกวิศวกรรมการแพทย์ (BME)',
           color: '#FFFFFF',
           size: 'md',
           weight: 'bold',
@@ -501,7 +509,7 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
         },
         {
           type: 'text',
-          text: 'ฝ่ายวิศวกรรมการแพทย์ (Biomedical Engineering)',
+          text: 'โรงพยาบาลพญาไทพหลโยธิน',
           color: '#94A3B8',
           size: 'xxs'
         }
@@ -511,53 +519,18 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
       type: 'box',
       layout: 'vertical',
       backgroundColor: '#F8FAFC',
-      paddingAll: '14px',
+      paddingAll: 'md',
       spacing: 'sm',
       contents: [
-        ...(photoUrl ? [{
-          type: 'box',
-          layout: 'vertical',
-          backgroundColor: '#FFFFFF',
-          cornerRadius: '10px',
-          paddingAll: '10px',
-          borderColor: '#CBD5E1',
-          borderWidth: '1px',
-          spacing: 'xs',
-          contents: [
-            {
-              type: 'box',
-              layout: 'horizontal',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              contents: [
-                { type: 'text', text: '📷 รูปถ่ายบัตร/ใบงานที่แนบมา:', size: 'xxs', color: '#475569', weight: 'bold' },
-                { type: 'text', text: 'แตะเพื่อเปิดรูปใหญ่ 🔍', size: 'xxs', color: '#2563EB' }
-              ]
-            },
-            {
-              type: 'image',
-              url: photoUrl,
-              size: 'full',
-              aspectRatio: '16:9',
-              aspectMode: 'cover',
-              cornerRadius: '6px',
-              action: {
-                type: 'uri',
-                label: 'ดูรูปบัตรขนาดเต็ม',
-                uri: photoUrl
-              }
-            }
-          ]
-        }] : []),
         // Visitor profile card box
         {
           type: 'box',
           layout: 'vertical',
           backgroundColor: '#FFFFFF',
-          cornerRadius: '10px',
-          paddingAll: '12px',
+          cornerRadius: 'md',
+          paddingAll: 'md',
           borderColor: '#E2E8F0',
-          borderWidth: '1px',
+          borderWidth: 'light',
           spacing: 'xs',
           contents: [
             {
@@ -599,10 +572,10 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
           type: 'box',
           layout: 'vertical',
           backgroundColor: '#FFFFFF',
-          cornerRadius: '10px',
-          paddingAll: '12px',
+          cornerRadius: 'md',
+          paddingAll: 'md',
           borderColor: '#E2E8F0',
-          borderWidth: '1px',
+          borderWidth: 'light',
           spacing: 'xs',
           contents: [
             {
@@ -672,30 +645,33 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
           ]
         }
       ]
-    },
-    footer: {
+    }
+  };
+
+  if (hasValidPhone) {
+    flexBubble.footer = {
       type: 'box',
       layout: 'vertical',
       spacing: 'xs',
       backgroundColor: '#FFFFFF',
-      paddingAll: '12px',
+      paddingAll: 'md',
       contents: [
-        ...(cleanPhone ? [{
+        {
           type: 'button',
           style: 'primary',
           color: '#06C755',
           height: 'sm',
           action: {
             type: 'uri',
-            label: `📞 โทรหาผู้ติดต่อ (${phone})`,
+            label: '📞 โทรหาผู้ติดต่อ',
             uri: `tel:${cleanPhone}`
           }
-        }] : [])
+        }
       ]
-    }
-  };
+    };
+  }
 
-  // If photoUrl is available, add a top hero section
+  // Attach hero image if a valid https URL is available
   if (photoUrl) {
     flexBubble.hero = {
       type: 'image',
@@ -705,15 +681,16 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
       aspectMode: 'cover',
       action: {
         type: 'uri',
-        label: 'ดูรูปบัตรขนาดเต็ม',
         uri: photoUrl
       }
     };
   }
 
+  const cleanAltText = (altText || `🔔 แจ้งเตือนผู้มาติดต่อ: ${visitorName} (${company}) เข้าพบแผนก ${department}`).substring(0, 390);
+
   return {
     type: 'flex',
-    altText: altText || `🔔 แจ้งเตือนผู้มาติดต่อ: ${visitorName} (${company}) เข้าพบแผนก ${department}`,
+    altText: cleanAltText,
     contents: flexBubble
   };
 }
@@ -778,9 +755,13 @@ app.post('/api/line/notify', async (req, res) => {
 
     if (!response.ok) {
       console.error('LINE Messaging API error:', data);
+      const detailStr = Array.isArray(data.details) && data.details.length > 0
+        ? data.details.map((d: any) => `${d.property || ''}: ${d.message || ''}`).join('; ')
+        : '';
+      const formattedErr = detailStr ? `${data.message || 'Error'} -> [${detailStr}]` : (data.message || 'LINE Push API request failed');
       return res.status(response.status).json({
         success: false,
-        error: data.message || data.details?.[0]?.message || 'LINE Push API request failed',
+        error: formattedErr,
         details: data
       });
     }
@@ -854,9 +835,13 @@ app.post('/api/line/test', async (req, res) => {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      const detailStr = Array.isArray(data.details) && data.details.length > 0
+        ? data.details.map((d: any) => `${d.property || ''}: ${d.message || ''}`).join('; ')
+        : '';
+      const formattedErr = detailStr ? `${data.message || 'Error'} -> [${detailStr}]` : (data.message || 'LINE API connection failed');
       return res.status(400).json({
         success: false,
-        error: data.message || data.details?.[0]?.message || 'LINE API connection failed',
+        error: formattedErr,
         details: data
       });
     }
