@@ -485,7 +485,14 @@ export class StorageService {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TELEGRAM);
       if (!data) return DEFAULT_TELEGRAM_CONFIG;
-      return { ...DEFAULT_TELEGRAM_CONFIG, ...JSON.parse(data) };
+      const parsed = JSON.parse(data);
+      return {
+        ...DEFAULT_TELEGRAM_CONFIG,
+        ...parsed,
+        botToken: (parsed.botToken && parsed.botToken.trim()) || DEFAULT_TELEGRAM_CONFIG.botToken,
+        chatId: (parsed.chatId && parsed.chatId.trim()) || DEFAULT_TELEGRAM_CONFIG.chatId,
+        enabled: parsed.enabled !== undefined ? parsed.enabled : true
+      };
     } catch {
       return DEFAULT_TELEGRAM_CONFIG;
     }
@@ -504,7 +511,14 @@ export class StorageService {
         this.saveLineConfig(DEFAULT_LINE_CONFIG);
         return DEFAULT_LINE_CONFIG;
       }
-      return { ...DEFAULT_LINE_CONFIG, ...JSON.parse(data) };
+      const parsed = JSON.parse(data);
+      return {
+        ...DEFAULT_LINE_CONFIG,
+        ...parsed,
+        channelAccessToken: (parsed.channelAccessToken && parsed.channelAccessToken.trim()) || DEFAULT_LINE_CONFIG.channelAccessToken,
+        targetId: (parsed.targetId && parsed.targetId.trim()) || DEFAULT_LINE_CONFIG.targetId,
+        enabled: parsed.enabled !== undefined ? parsed.enabled : true
+      };
     } catch {
       return DEFAULT_LINE_CONFIG;
     }

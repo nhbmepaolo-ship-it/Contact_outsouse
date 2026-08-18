@@ -315,14 +315,21 @@ export async function sendLineFlexNotification(
   customConfig?: Partial<LineConfig>
 ): Promise<{ success: boolean; message: string; details?: any }> {
   try {
-    const config = { ...StorageService.getLineConfig(), ...(customConfig || {}) };
+    const savedConfig = StorageService.getLineConfig();
+    const config = {
+      ...savedConfig,
+      ...(customConfig || {}),
+      channelAccessToken: (customConfig?.channelAccessToken || savedConfig.channelAccessToken || DEFAULT_LINE_CONFIG.channelAccessToken).trim(),
+      targetId: (customConfig?.targetId || savedConfig.targetId || DEFAULT_LINE_CONFIG.targetId).trim(),
+      enabled: customConfig?.enabled !== undefined ? customConfig.enabled : true
+    };
 
     if (!config.enabled) {
-      return { success: false, message: 'LINE notifications are currently disabled in settings' };
+      return { success: false, message: 'การแจ้งเตือน LINE ปิดใช้งานอยู่ในตั้งค่า' };
     }
 
     if (!config.channelAccessToken || !config.targetId) {
-      return { success: false, message: 'Missing LINE Channel Access Token or Target User ID' };
+      return { success: false, message: 'ขาด LINE Channel Access Token หรือ Target User ID' };
     }
 
     // Call server proxy endpoint to securely dispatch LINE push message
