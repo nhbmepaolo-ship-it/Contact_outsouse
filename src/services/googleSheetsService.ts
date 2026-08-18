@@ -816,23 +816,34 @@ export class GoogleSheetsService {
     // 2. Try fetching direct CSV from Google Sheets (Requires "Anyone with the link can view")
     try {
       const baseCsvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Data_base')}`;
-      const eqCsvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Data_equpment')}`;
+      const eqCsvUrl1 = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Data_equpment')}`;
+      const eqCsvUrl2 = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Data_equipment')}`;
 
-      const [resBase, resEq] = await Promise.all([
-        fetch(baseCsvUrl),
-        fetch(eqCsvUrl).catch(() => null),
+      const [resBase, resEq1, resEq2] = await Promise.all([
+        fetch(baseCsvUrl).catch(() => null),
+        fetch(eqCsvUrl1).catch(() => null),
+        fetch(eqCsvUrl2).catch(() => null),
       ]);
 
-      if (resBase.ok) {
-        const textBase = await resBase.text();
-        // Check if Google returned login page HTML instead of CSV
-        if (textBase.includes('<!DOCTYPE html>') || textBase.includes('google.com/ServiceLogin')) {
-          return {
-            success: false,
-            message: '⚠️ ไม่สามารถดึงข้อมูลได้เนื่องจาก Google Sheet ตั้งค่าการแชร์เป็น "จำกัด (Restricted)" กรุณากดปุ่ม "แชร์ (Share)" ใน Google Sheets แล้วเปลี่ยนเป็น "ทุกคนที่มีลิงก์มีสิทธิ์ดู (Anyone with the link)" หรือใส่ Apps Script Webhook URL',
-          };
-        }
+      let textBase = '';
+      if (resBase && resBase.ok) {
+        textBase = await resBase.text();
+      }
 
+      // Try server proxy fallback if direct fetch fails
+      if (!textBase || textBase.includes('<!DOCTYPE html>') || textBase.includes('google.com/ServiceLogin')) {
+        try {
+          const serverRes = await fetch(`/api/sheets/fetch?sheetId=${encodeURIComponent(sheetId)}&sheetName=${encodeURIComponent('Data_base')}`);
+          if (serverRes.ok) {
+            const serverJson = await serverRes.json();
+            if (serverJson.success && serverJson.csv) {
+              textBase = serverJson.csv;
+            }
+          }
+        } catch {}
+      }
+
+      if (textBase && !textBase.includes('<!DOCTYPE html>') && !textBase.includes('google.com/ServiceLogin')) {
         const linesBase = textBase.split(/\r?\n/).filter(line => line.trim().length > 0);
         // Parse CSV lines for Data_base
         // 1. บริษัท: คอลัมน์ A (Company)
@@ -878,43 +889,61 @@ export class GoogleSheetsService {
         }
 
         const parsedEqs: EquipmentInfo[] = [];
-        if (resEq && resEq.ok) {
-          const textEq = await resEq.text();
-          if (!textEq.includes('<!DOCTYPE html>')) {
-            const linesEq = textEq.split(/\r?\n/).filter(line => line.trim().length > 0);
-            const seenEqNames = new Set<string>();
-            for (let i = 1; i < linesEq.length; i++) {
-              const cols = parseCsvLine(linesEq[i]);
-              // Format: Type_Equpment (Col A) | Name_Equpment (Col B) | Brand (Col C) | Name_EqupmentTH (Col D)
-              const eqType = cols[0]?.trim() || '';
-              const eqName = cols[1]?.trim() || cols[0]?.trim() || '';
-              const eqBrand = cols[2]?.trim() || '';
-              const eqNameThFromSheet = cols[3]?.trim() || '';
-              const finalNameTh = eqNameThFromSheet || translateMedicalEquipmentToThai(eqName, eqType);
+        let textEq = '';
+        if (resEq1 && resEq1.ok) {
+          textEq = await resEq1.text();
+        }
+        if ((!textEq || textEq.includes('<!DOCTYPE html>')) && resEq2 && resEq2.ok) {
+          textEq = await resEq2.text();
+        }
 
-              if (eqName && !seenEqNames.has(`${eqType}-${eqName}-${eqBrand}`.toLowerCase())) {
-                seenEqNames.add(`${eqType}-${eqName}-${eqBrand}`.toLowerCase());
-                parsedEqs.push({
-                  id: `eq-sync-${parsedEqs.length + 1}`,
-                  code: `EQ-${parsedEqs.length + 1}`,
-                  name: eqName,
-                  nameTh: finalNameTh,
-                  brand: eqBrand,
-                  category: eqType || 'Medical Equipment',
-                  department: '',
-                });
+        // Server proxy fallback for Equipment tab
+        if (!textEq || textEq.includes('<!DOCTYPE html>') || textEq.includes('google.com/ServiceLogin')) {
+          try {
+            const serverEqRes = await fetch(`/api/sheets/fetch?sheetId=${encodeURIComponent(sheetId)}&sheetName=${encodeURIComponent('Data_equpment')}`);
+            if (serverEqRes.ok) {
+              const serverEqJson = await serverEqRes.json();
+              if (serverEqJson.success && serverEqJson.csv) {
+                textEq = serverEqJson.csv;
               }
+            }
+          } catch {}
+        }
+
+        if (textEq && !textEq.includes('<!DOCTYPE html>') && !textEq.includes('google.com/ServiceLogin')) {
+          const linesEq = textEq.split(/\r?\n/).filter(line => line.trim().length > 0);
+          const seenEqNames = new Set<string>();
+          for (let i = 1; i < linesEq.length; i++) {
+            const cols = parseCsvLine(linesEq[i]);
+            // Format: Type_Equpment (Col A) | Name_Equpment (Col B) | Brand (Col C) | Name_EqupmentTH (Col D)
+            const eqType = cols[0]?.trim() || '';
+            const eqName = cols[1]?.trim() || cols[0]?.trim() || '';
+            const eqBrand = cols[2]?.trim() || '';
+            const eqNameThFromSheet = cols[3]?.trim() || '';
+            const finalNameTh = eqNameThFromSheet || translateMedicalEquipmentToThai(eqName, eqType);
+
+            if (eqName && !seenEqNames.has(`${eqType}-${eqName}-${eqBrand}`.toLowerCase())) {
+              seenEqNames.add(`${eqType}-${eqName}-${eqBrand}`.toLowerCase());
+              parsedEqs.push({
+                id: `eq-sync-${parsedEqs.length + 1}`,
+                code: `EQ-${parsedEqs.length + 1}`,
+                name: eqName,
+                nameTh: finalNameTh,
+                brand: eqBrand,
+                category: eqType || 'Medical Equipment',
+                department: '',
+              });
             }
           }
         }
 
-        if (parsedDepts.length > 0 || parsedCompanies.length > 0) {
+        if (parsedDepts.length > 0 || parsedCompanies.length > 0 || parsedEqs.length > 0) {
           return {
             success: true,
             departments: parsedDepts,
             companies: parsedCompanies,
             equipments: parsedEqs,
-            message: `ซิงค์ข้อมูลจากชีท Data_base สำเร็จ: พบ ${parsedCompanies.length} บริษัท (คอลัมน์ A), ${parsedDepts.length} แผนก (คอลัมน์ B) และ ${parsedEqs.length} เครื่องมือแพทย์พร้อมคำแปลไทย (คอลัมน์ D)`,
+            message: `ซิงค์ข้อมูลจากชีทสำเร็จ: พบ ${parsedCompanies.length} บริษัท, ${parsedDepts.length} แผนก และ ${parsedEqs.length} เครื่องมือแพทย์พร้อม Brand และคำแปลไทย`,
           };
         }
       }
