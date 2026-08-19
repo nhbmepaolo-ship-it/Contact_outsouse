@@ -32,25 +32,31 @@ export default async function handler(req, res) {
       channelAccessToken = DEFAULT_LINE_TOKEN;
     }
 
-    // Process image
+    // Process image using FreeImage CDN (returns direct static https://iili.io/... URL)
     let hostedImageUrl = null;
     const rawImage = cardImage || photo || record?.cardImage || record?.cardImageUrl;
     if (rawImage && typeof rawImage === 'string' && rawImage.startsWith('data:image/')) {
       try {
-        const match = rawImage.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-        if (match) {
-          const buffer = Buffer.from(match[2], 'base64');
-          const formData = new FormData();
-          formData.append('file', new Blob([buffer], { type: 'image/jpeg' }), 'visitor_card.jpg');
-          const tmpRes = await fetch('https://tmpfiles.org/api/v1/upload', {
-            method: 'POST',
-            body: formData
-          });
-          if (tmpRes.ok) {
-            const tmpJson = await tmpRes.json();
-            if (tmpJson?.data?.url) {
-              hostedImageUrl = tmpJson.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-            }
+        const match = rawImage.match(/^data:image\/[a-zA-Z0-9+.-]+;base64,(.+)$/);
+        const base64String = match ? match[1] : rawImage;
+
+        const params = new URLSearchParams();
+        params.append('key', '6d207e02198a847aa98d0a2a901485a5');
+        params.append('action', 'upload');
+        params.append('source', base64String);
+        params.append('format', 'json');
+
+        const tmpRes = await fetch('https://freeimage.host/api/1/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params
+        });
+
+        if (tmpRes.ok) {
+          const tmpJson = await tmpRes.json();
+          const directUrl = tmpJson?.image?.url || tmpJson?.image?.display_url;
+          if (directUrl && typeof directUrl === 'string' && directUrl.startsWith('https://')) {
+            hostedImageUrl = directUrl;
           }
         }
       } catch (e) {
@@ -68,6 +74,13 @@ export default async function handler(req, res) {
     } else if (record) {
       const builtFlex = createVisitorFlexMessage(record, altText, hostedImageUrl);
       payloadMessages = [builtFlex];
+      if (hostedImageUrl) {
+        payloadMessages.push({
+          type: 'image',
+          originalContentUrl: hostedImageUrl,
+          previewImageUrl: hostedImageUrl
+        });
+      }
     } else {
       return res.status(400).json({ success: false, error: 'Record is required' });
     }

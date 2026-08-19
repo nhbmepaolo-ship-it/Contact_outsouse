@@ -151,31 +151,77 @@ async function uploadToTmpfiles(buffer: Buffer): Promise<string | null> {
   return null;
 }
 
+async function uploadToFreeImageCDN(photoData: string): Promise<string | null> {
+  try {
+    const clean = photoData.trim();
+    if (!clean) return null;
+    let base64String = clean;
+    if (clean.startsWith('data:image/')) {
+      const match = clean.match(/^data:image\/[a-zA-Z0-9+.-]+;base64,(.+)$/);
+      if (match) {
+        base64String = match[1];
+      }
+    }
+
+    const params = new URLSearchParams();
+    params.append('key', '6d207e02198a847aa98d0a2a901485a5');
+    params.append('action', 'upload');
+    params.append('source', base64String);
+    params.append('format', 'json');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+
+    const res = await fetch('https://freeimage.host/api/1/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const json = await res.json();
+      const directUrl = json?.image?.url || json?.image?.display_url;
+      if (directUrl && typeof directUrl === 'string' && directUrl.startsWith('https://')) {
+        return directUrl;
+      }
+    }
+  } catch (err) {
+    console.warn('FreeImage CDN upload warning:', err);
+  }
+  return null;
+}
+
 async function storeImageAndGetPublicUrlAsync(photoData: string | undefined, req: express.Request, idHint?: string): Promise<string | null> {
   if (!photoData || typeof photoData !== 'string') return null;
   const clean = photoData.trim();
   if (!clean) return null;
 
-  if (clean.startsWith('https://') && !clean.includes('localhost') && !clean.includes('127.0.0.1') && !clean.includes('.run.app')) {
+  if (clean.startsWith('https://') && !clean.includes('localhost') && !clean.includes('127.0.0.1')) {
     return clean;
   }
 
   if (clean.startsWith('data:image/')) {
     try {
+      // Tier 1: High-Speed FreeImage CDN (returns direct https://iili.io/... URL)
+      const cdnUrl = await uploadToFreeImageCDN(clean);
+      if (cdnUrl) return cdnUrl;
+
       const match = clean.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
       if (match) {
         const base64Data = match[2];
         const buffer = Buffer.from(base64Data, 'base64');
-        
-        // Tier 1: Telegram CDN
-        const telegramUrl = await uploadPhotoToTelegramCDN(buffer);
-        if (telegramUrl) return telegramUrl;
 
         // Tier 2: tmpfiles CDN
         const tmpUrl = await uploadToTmpfiles(buffer);
         if (tmpUrl) return tmpUrl;
 
-        // Tier 3: Server Image Cache Endpoint
+        // Tier 3: Telegram CDN
+        const telegramUrl = await uploadPhotoToTelegramCDN(buffer);
+        if (telegramUrl) return telegramUrl;
+
+        // Tier 4: Server Image Cache Endpoint
         return storeImageAndGetPublicUrl(photoData, req, idHint);
       }
     } catch (e) {
@@ -570,7 +616,6 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
       photoUrl.includes('localhost') ||
       photoUrl.includes('127.0.0.1') ||
       photoUrl.includes('0.0.0.0') ||
-      photoUrl.includes('.run.app') ||
       photoUrl.includes('data:image/')
     ) {
       photoUrl = null;
@@ -860,6 +905,13 @@ app.post('/api/line/notify', async (req, res) => {
     } else if (record) {
       const builtFlex = createVisitorFlexMessage(record, altText, hostedImageUrl);
       payloadMessages = [builtFlex];
+      if (hostedImageUrl) {
+        payloadMessages.push({
+          type: 'image',
+          originalContentUrl: hostedImageUrl,
+          previewImageUrl: hostedImageUrl
+        });
+      }
     } else {
       return res.status(400).json({
         success: false,
