@@ -124,6 +124,33 @@ async function uploadPhotoToTelegramCDN(buffer: Buffer): Promise<string | null> 
   return null;
 }
 
+async function uploadToTmpfiles(buffer: Buffer): Promise<string | null> {
+  try {
+    const formData = new FormData();
+    formData.append('file', new Blob([buffer], { type: 'image/jpeg' }), 'visitor_card.jpg');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch('https://tmpfiles.org/api/v1/upload', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const json = await res.json();
+      const rawUrl = json?.data?.url;
+      if (rawUrl && typeof rawUrl === 'string') {
+        return rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+      }
+    }
+  } catch (err) {
+    console.warn('tmpfiles upload failed or skipped:', err);
+  }
+  return null;
+}
+
 async function storeImageAndGetPublicUrlAsync(photoData: string | undefined, req: express.Request, idHint?: string): Promise<string | null> {
   if (!photoData || typeof photoData !== 'string') return null;
   const clean = photoData.trim();
@@ -139,11 +166,20 @@ async function storeImageAndGetPublicUrlAsync(photoData: string | undefined, req
       if (match) {
         const base64Data = match[2];
         const buffer = Buffer.from(base64Data, 'base64');
+        
+        // Tier 1: Telegram CDN
         const telegramUrl = await uploadPhotoToTelegramCDN(buffer);
         if (telegramUrl) return telegramUrl;
+
+        // Tier 2: tmpfiles CDN
+        const tmpUrl = await uploadToTmpfiles(buffer);
+        if (tmpUrl) return tmpUrl;
+
+        // Tier 3: Server Image Cache Endpoint
+        return storeImageAndGetPublicUrl(photoData, req, idHint);
       }
     } catch (e) {
-      console.warn('Failed to parse base64 image for Telegram CDN:', e);
+      console.warn('Failed to parse base64 image for public CDN:', e);
     }
   }
   return null;
@@ -766,6 +802,22 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
     };
   }
 
+  // Attach hero image if a valid https URL (such as Telegram CDN / tmpfiles / server host) is available
+  if (photoUrl) {
+    flexBubble.hero = {
+      type: 'image',
+      url: photoUrl,
+      size: 'full',
+      aspectRatio: '16:9',
+      aspectMode: 'cover',
+      action: {
+        type: 'uri',
+        label: '🔍 ดูรูปถ่ายขนาดเต็ม',
+        uri: photoUrl
+      }
+    };
+  }
+
   const cleanAltText = (altText || `🔔 แจ้งเตือนผู้มาติดต่อ: ${visitorName} (${company}) เข้าพบแผนก ${department}`).substring(0, 390);
 
   return {
@@ -779,21 +831,19 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
 app.post('/api/line/notify', async (req, res) => {
   try {
     const { token, targetId, record, cardImage, photo, flexMessage, messages, altText } = req.body;
-    const channelAccessToken = (token || cachedSettings.lineToken || DEFAULT_LINE_TOKEN || '').trim();
-    const destinationId = (targetId || cachedSettings.lineTargetId || DEFAULT_LINE_TARGET_ID || '').trim();
+    let channelAccessToken = (token || cachedSettings.lineToken || DEFAULT_LINE_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+    let destinationId = (targetId || cachedSettings.lineTargetId || DEFAULT_LINE_TARGET_ID || '').trim().replace(/^["']|["']$/g, '');
 
-    if (!channelAccessToken) {
-      return res.status(400).json({
-        success: false,
-        error: 'LINE Channel Access Token is required'
-      });
+    // Strict validation for LINE Target ID format (starts with U, C, or R followed by 32 hex chars)
+    const isLineIdValid = /^[UCR][a-fA-F0-9]{32}$/.test(destinationId);
+    if (!isLineIdValid) {
+      console.warn(`[LINE NOTIFY] Invalid destinationId "${destinationId}". Auto-reverting to default valid LINE Target ID "${DEFAULT_LINE_TARGET_ID}"`);
+      destinationId = DEFAULT_LINE_TARGET_ID;
     }
 
-    if (!destinationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'LINE Target User ID / Group ID is required'
-      });
+    if (!channelAccessToken || channelAccessToken.length < 20) {
+      console.warn(`[LINE NOTIFY] Invalid channelAccessToken. Auto-reverting to default token.`);
+      channelAccessToken = DEFAULT_LINE_TOKEN;
     }
 
     // Process attached image if present (asynchronously upload to public host for LINE display)

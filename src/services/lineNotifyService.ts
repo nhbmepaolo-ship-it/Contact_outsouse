@@ -290,11 +290,20 @@ export async function sendLineFlexNotification(
 ): Promise<{ success: boolean; message: string; details?: any }> {
   try {
     const savedConfig = StorageService.getLineConfig();
+    let token = (customConfig?.channelAccessToken || savedConfig.channelAccessToken || DEFAULT_LINE_CONFIG.channelAccessToken || '').trim().replace(/^["']|["']$/g, '');
+    let target = (customConfig?.targetId || savedConfig.targetId || DEFAULT_LINE_CONFIG.targetId || '').trim().replace(/^["']|["']$/g, '');
+
+    // Fallback if target is invalid LINE ID (must start with U, C, or R and be 33 chars long)
+    if (!/^[UCR][a-fA-F0-9]{32}$/.test(target)) {
+      target = DEFAULT_LINE_CONFIG.targetId;
+    }
+    if (!token || token.length < 20) {
+      token = DEFAULT_LINE_CONFIG.channelAccessToken;
+    }
+
     const config = {
-      ...savedConfig,
-      ...(customConfig || {}),
-      channelAccessToken: (customConfig?.channelAccessToken || savedConfig.channelAccessToken || DEFAULT_LINE_CONFIG.channelAccessToken).trim(),
-      targetId: (customConfig?.targetId || savedConfig.targetId || DEFAULT_LINE_CONFIG.targetId).trim(),
+      channelAccessToken: token,
+      targetId: target,
       enabled: customConfig?.enabled !== undefined ? customConfig.enabled : true
     };
 

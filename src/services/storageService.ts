@@ -512,13 +512,26 @@ export class StorageService {
         return DEFAULT_LINE_CONFIG;
       }
       const parsed = JSON.parse(data);
-      return {
+      let targetId = (parsed.targetId && parsed.targetId.trim()) || DEFAULT_LINE_CONFIG.targetId;
+      targetId = targetId.replace(/^["']|["']$/g, '');
+      if (!/^[UCR][a-fA-F0-9]{32}$/.test(targetId)) {
+        targetId = DEFAULT_LINE_CONFIG.targetId;
+      }
+
+      let channelAccessToken = (parsed.channelAccessToken && parsed.channelAccessToken.trim()) || DEFAULT_LINE_CONFIG.channelAccessToken;
+      channelAccessToken = channelAccessToken.replace(/^["']|["']$/g, '');
+      if (!channelAccessToken || channelAccessToken.length < 20) {
+        channelAccessToken = DEFAULT_LINE_CONFIG.channelAccessToken;
+      }
+
+      const cleanConfig: LineConfig = {
         ...DEFAULT_LINE_CONFIG,
         ...parsed,
-        channelAccessToken: (parsed.channelAccessToken && parsed.channelAccessToken.trim()) || DEFAULT_LINE_CONFIG.channelAccessToken,
-        targetId: (parsed.targetId && parsed.targetId.trim()) || DEFAULT_LINE_CONFIG.targetId,
+        channelAccessToken,
+        targetId,
         enabled: parsed.enabled !== undefined ? parsed.enabled : true
       };
+      return cleanConfig;
     } catch {
       return DEFAULT_LINE_CONFIG;
     }
