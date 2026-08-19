@@ -315,19 +315,30 @@ export async function sendLineFlexNotification(
       return { success: false, message: 'ขาด LINE Channel Access Token หรือ Target User ID' };
     }
 
-    // Call server proxy endpoint to securely dispatch LINE push message
-    const response = await fetch('/api/line/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: config.channelAccessToken,
-        targetId: config.targetId,
-        record: record,
-        altText: `🔔 ผู้มาติดต่อ: ${record.name} (${record.company}) เข้าพบ ${record.department}`
-      })
-    });
+    // Call server proxy endpoint to securely dispatch LINE push message (with 1 auto-retry on network error)
+    let response: Response | null = null;
+    let resText = '';
+    
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        response = await fetch('/api/line/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: config.channelAccessToken,
+            targetId: config.targetId,
+            record: record,
+            altText: `🔔 ผู้มาติดต่อ: ${record.name} (${record.company}) เข้าพบ ${record.department}`
+          })
+        });
+        resText = await response.text();
+        if (response.ok) break;
+      } catch (e) {
+        if (attempt === 2) throw e;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
 
-    const resText = await response.text();
     let data: any = {};
     try {
       data = resText ? JSON.parse(resText) : {};
@@ -335,10 +346,10 @@ export async function sendLineFlexNotification(
       data = { error: resText ? resText.slice(0, 200) : 'ระบบส่งผลลัพธ์ตอบกลับว่างเปล่า' };
     }
 
-    if (!response.ok || !data.success) {
+    if (!response || !response.ok || !data.success) {
       return {
         success: false,
-        message: data.error || data.message || 'ส่งการ์ดแจ้งเตือน LINE ไม่สำเร็จ',
+        message: data.error || data.message || (response ? `LINE API HTTP ${response.status}` : 'ส่งการ์ดแจ้งเตือน LINE ไม่สำเร็จ'),
         details: data
       };
     }
