@@ -104,40 +104,6 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
       paddingAll: '14px',
       spacing: 'sm',
       contents: [
-        ...(photoUrl ? [{
-          type: 'box',
-          layout: 'vertical',
-          backgroundColor: '#FFFFFF',
-          cornerRadius: 'md',
-          paddingAll: 'sm',
-          borderColor: '#CBD5E1',
-          borderWidth: 'light',
-          spacing: 'xs',
-          contents: [
-            {
-              type: 'box',
-              layout: 'horizontal',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              contents: [
-                { type: 'text', text: '📷 รูปถ่ายบัตร/ใบงานที่แนบมา:', size: 'xxs', color: '#475569', weight: 'bold' },
-                { type: 'text', text: 'แตะเพื่อเปิดรูปใหญ่ 🔍', size: 'xxs', color: '#2563EB' }
-              ]
-            },
-            {
-              type: 'image',
-              url: photoUrl,
-              size: 'full',
-              aspectRatio: '16:9',
-              aspectMode: 'cover',
-              cornerRadius: 'xs',
-              action: {
-                type: 'uri',
-                uri: photoUrl
-              }
-            }
-          ]
-        }] : []),
         // 1. Visitor Profile Card
         {
           type: 'box',
@@ -250,6 +216,14 @@ export function buildVisitorLineFlexMessage(record: VisitorRecord, customAltText
                 { type: 'text', text: notes, size: 'xs', color: '#475569', flex: 5, wrap: true }
               ]
             }] : []),
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '📸 รูปถ่ายบัตร/เอกสาร:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: (record.cardImageUrl || record.cardImage) ? '📷 ถ่ายและบันทึกในระบบเรียบร้อย' : 'ไม่ได้แนบรูปถ่าย', size: 'xs', color: (record.cardImageUrl || record.cardImage) ? '#059669' : '#64748B', weight: 'bold', flex: 5 }
+              ]
+            },
             {
               type: 'box',
               layout: 'horizontal',

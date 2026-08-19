@@ -766,21 +766,6 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
     };
   }
 
-  // Attach hero image if a valid https URL (such as Telegram CDN) is available
-  if (photoUrl) {
-    flexBubble.hero = {
-      type: 'image',
-      url: photoUrl,
-      size: 'full',
-      aspectRatio: '16:9',
-      aspectMode: 'cover',
-      action: {
-        type: 'uri',
-        uri: photoUrl
-      }
-    };
-  }
-
   const cleanAltText = (altText || `🔔 แจ้งเตือนผู้มาติดต่อ: ${visitorName} (${company}) เข้าพบแผนก ${department}`).substring(0, 390);
 
   return {
