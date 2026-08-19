@@ -92,6 +92,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
       let matchSearch = true;
       if (term) {
         const matchCompName = group.companyName.toLowerCase().includes(term) ||
+          (group.companyEnglishName && group.companyEnglishName.toLowerCase().includes(term)) ||
           group.aliases.some(a => a.toLowerCase().includes(term));
 
         const matchContacts = group.contacts.some(c =>
@@ -406,26 +407,31 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredGroupedCompanies.map((group) => {
+          {filteredGroupedCompanies.map((group, groupIdx) => {
             return (
               <div
-                key={group.id}
+                key={`${group.id || 'grp-comp'}-${groupIdx}`}
                 className="bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden"
               >
                 {/* 1. Company Card Header */}
-                <div className="p-4 border-b border-slate-100 bg-slate-50/80">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                        <Building2 className="w-5 h-5" />
+                <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/80">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <Building2 className="w-4 h-4" />
                       </div>
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-slate-900 text-sm leading-snug truncate" title={group.companyName}>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-bold text-slate-900 text-xs leading-tight truncate" title={group.companyName}>
                           {group.companyName}
                         </h3>
-                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
-                          <Users className="w-3.5 h-3.5 text-blue-600" />
-                          <span className="font-semibold text-slate-700">
+                        {group.companyEnglishName && (
+                          <p className="text-[11px] text-slate-500 font-medium leading-tight truncate font-sans tracking-tight" title={group.companyEnglishName}>
+                            {group.companyEnglishName}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-400">
+                          <Users className="w-3 h-3 text-blue-600 shrink-0" />
+                          <span className="font-medium text-slate-600">
                             {group.contacts.length} ผู้ติดต่อ / เจ้าหน้าที่
                           </span>
                         </div>
@@ -434,92 +440,92 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
 
                     <button
                       onClick={() => handleOpenAdd(group.companyName)}
-                      className="shrink-0 text-[11px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                      className="shrink-0 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 font-medium flex items-center gap-0.5 cursor-pointer transition-colors"
                       title="เพิ่มผู้ติดต่อในบริษัทนี้"
                     >
-                      <Plus className="w-3 h-3" />
+                      <Plus className="w-2.5 h-2.5" />
                       <span>เพิ่มคน</span>
                     </button>
                   </div>
                 </div>
 
                 {/* 2. Contacts List inside this Company Frame */}
-                <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
-                  <div className="space-y-2.5">
-                    {group.contacts.map((c) => (
+                <div className="p-3.5 flex-1 flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    {group.contacts.map((c, cIdx) => (
                       <div
-                        key={c.id}
-                        className="bg-slate-50/90 rounded-lg p-3 border border-slate-200/90 hover:border-blue-200 transition-colors"
+                        key={c.id ? `${group.id}-${c.id}-${cIdx}` : `${group.id}-staff-${cIdx}`}
+                        className="bg-slate-50/90 rounded-lg p-2.5 border border-slate-200/90 hover:border-blue-200 transition-colors"
                       >
                         {/* Person Name & Role & Actions */}
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <div className="flex items-center justify-between gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <span className="font-bold text-xs text-slate-900 truncate">
+                            <User className="w-3 h-3 text-slate-500 shrink-0" />
+                            <span className="font-semibold text-xs text-slate-900 truncate">
                               {c.contactName}
                             </span>
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded border font-semibold shrink-0 ${getRoleBadge(c.role)}`}>
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded border font-medium shrink-0 ${getRoleBadge(c.role)}`}>
                               {c.role}
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               onClick={() => handleOpenEdit(c)}
                               className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-white transition-colors cursor-pointer"
                               title="แก้ไขข้อมูลผู้ติดต่อนี้"
                             >
-                              <Edit2 className="w-3 h-3" />
+                              <Edit2 className="w-2.5 h-2.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteContact(c.id, c.contactName, group.companyName)}
                               className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-white transition-colors cursor-pointer"
                               title="ลบผู้ติดต่อนี้"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         </div>
 
                         {/* Phone Number with Click-to-Call & Copy */}
                         {c.phone && c.phone !== '-' ? (
-                          <div className="flex items-center justify-between text-xs bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                          <div className="flex items-center justify-between text-xs bg-white px-2 py-1 rounded border border-slate-200">
                             <a
                               href={`tel:${cleanPhoneNumber(c.phone)}`}
-                              className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-bold font-mono hover:underline"
+                              className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold font-mono hover:underline text-[11px]"
                             >
-                              <Phone className="w-3 h-3" />
+                              <Phone className="w-2.5 h-2.5" />
                               <span>{formatPhoneNumber(c.phone)}</span>
                             </a>
                             <button
                               onClick={() => handleCopyPhone(c.phone)}
-                              className="text-slate-400 hover:text-slate-700 text-[10px] flex items-center gap-1 cursor-pointer"
+                              className="text-slate-400 hover:text-slate-700 text-[9px] flex items-center gap-0.5 cursor-pointer"
                               title="คัดลอกเบอร์โทร"
                             >
                               {copiedPhone === cleanPhoneNumber(c.phone) ? (
                                 <span className="text-blue-600 font-semibold flex items-center gap-0.5">
-                                  <Check className="w-3 h-3" /> คัดลอกแล้ว
+                                  <Check className="w-2.5 h-2.5" /> คัดลอกแล้ว
                                 </span>
                               ) : (
                                 <span className="flex items-center gap-0.5">
-                                  <Copy className="w-3 h-3" /> คัดลอก
+                                  <Copy className="w-2.5 h-2.5" /> คัดลอก
                                 </span>
                               )}
                             </button>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-slate-400 italic">
+                          <div className="text-[10px] text-slate-400 italic">
                             ไม่ได้ระบุเบอร์โทรศัพท์
                           </div>
                         )}
 
                         {/* Individual Equipment handled (if contact has specific items) */}
                         {c.equipmentList && c.equipmentList.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1">
+                          <div className="mt-1 flex flex-wrap gap-1">
                             {c.equipmentList.map((eq, i) => (
                               <span
-                                key={i}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                                key={`${c.id || cIdx}-eq-${i}-${eq}`}
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium"
                               >
                                 {eq}
                               </span>
@@ -533,16 +539,16 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
                   {/* Company Overall Equipment Handled */}
                   {group.allEquipments.length > 0 && (
                     <div className="pt-2 border-t border-slate-100">
-                      <span className="text-[11px] font-bold text-slate-500 block mb-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 block mb-1">
                         เครื่องมือแพทย์ที่ดูแลรวม ({group.allEquipments.length} รายการ):
                       </span>
                       <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
                         {group.allEquipments.map((eq, idx) => (
                           <span
-                            key={idx}
-                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium"
+                            key={`${group.id}-all-eq-${idx}-${eq}`}
+                            className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium"
                           >
-                            <Tag className="w-2.5 h-2.5 text-blue-600" />
+                            <Tag className="w-2 h-2 text-blue-600" />
                             <span>{eq}</span>
                           </span>
                         ))}
@@ -552,7 +558,7 @@ export const CompanyDirectoryView: React.FC<CompanyDirectoryViewProps> = ({
                 </div>
 
                 {/* 3. Company Card Footer */}
-                <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                <div className="px-3.5 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
                   <span>
                     เข้าพบรวม: <b className="font-mono text-slate-900">{group.totalVisits}</b> ครั้ง
                   </span>

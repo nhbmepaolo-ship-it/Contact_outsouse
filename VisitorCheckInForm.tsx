@@ -21,7 +21,8 @@ import {
   Search,
   ChevronDown,
   Check,
-  Languages
+  Languages,
+  Plus
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -34,6 +35,7 @@ import {
 import { StorageService } from '../services/storageService';
 import { translateMedicalEquipmentToThai } from '../utils/equipmentTranslator';
 import { sendTelegramNotification, formatVisitorTelegramMessage } from '../services/telegramService';
+import { sendLineFlexNotification } from '../services/lineNotifyService';
 import { GoogleSheetsService } from '../services/googleSheetsService';
 import { compressImage } from '../utils/imageCompressor';
 import { cleanPhoneNumber } from '../utils/phoneFormatter';
@@ -65,18 +67,24 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<ContactRole>('ช่าง');
   const [department, setDepartment] = useState(departments[0]?.name || 'Physiotherapy');
-  const [workType, setWorkType] = useState('งานซ่อม');
+  const [workType, setWorkType] = useState('สำรวจหน้างาน / ดูพื้นที่');
   const [customWorkType, setCustomWorkType] = useState('');
+  const [workDetails, setWorkDetails] = useState('');
   const [visitorCount, setVisitorCount] = useState<number>(1);
   const [vehicleType, setVehicleType] = useState<VehicleType>('รถยนต์ส่วนบุคคล');
   const [licensePlate, setLicensePlate] = useState('');
   const [selectedEquipments, setSelectedEquipments] = useState<string[]>([]);
+  const [equipmentSearch, setEquipmentSearch] = useState('');
+  const [equipmentBrandFilter, setEquipmentBrandFilter] = useState('all');
   const [customEquipment, setCustomEquipment] = useState('');
+  const [customEquipmentBrand, setCustomEquipmentBrand] = useState('');
   const [cardImage, setCardImage] = useState<string>('');
   const [sendTelegram, setSendTelegram] = useState<boolean>(true);
+  const [sendLine, setSendLine] = useState<boolean>(true);
   const [notes, setNotes] = useState('');
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [lineStatus, setLineStatus] = useState<string | null>(null);
 
   const companyDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -123,29 +131,52 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Common quick work types
+  // Common quick work types with emojis
   const WORK_TYPES = [
-    'งานซ่อม',
-    'งาน PM',
-    'DEMO',
-    'Training (สอนใช้งาน)',
-    'ติดตั้ง',
+    'สำรวจหน้างาน / ดูพื้นที่',
+    'Demo',
     'ส่งมอบสินค้า / ส่งเครื่อง',
+    'Demo Return',
+    'อื่นๆ (ระบุเอง)',
+    'งาน PM',
     'ตรวจกรมวิทย์ (สอบเทียบรังสี)',
     'สอบเทียบเครื่องมือ',
-    'สำรวจหน้างาน / ดูพื้นที่',
-    'ตรวจเช็คเครื่อง',
-    'อื่นๆ (ระบุเอง)',
+    'งานซ่อม',
+    'ติดตั้ง',
+    'Training (สอนการใช้งาน)',
   ];
 
-  // Common vehicle types
-  const VEHICLE_OPTIONS: { type: VehicleType; icon: React.ReactNode; label: string }[] = [
-    { type: 'รถยนต์ส่วนบุคคล', icon: <Car className="w-4 h-4" />, label: 'รถยนต์ส่วนบุคคล / รถเก๋ง / กระบะ' },
-    { type: 'จักรยานยนต์', icon: <Bike className="w-4 h-4" />, label: 'จักรยานยนต์' },
-    { type: 'รถบรรทุก 4 ล้อ', icon: <Truck className="w-4 h-4" />, label: 'รถบรรทุก 4 ล้อ' },
-    { type: 'รถบรรทุก 6 ล้อ', icon: <Truck className="w-4 h-4" />, label: 'รถบรรทุก 6 ล้อ' },
-    { type: 'รถบรรทุก 10 ล้อ', icon: <Truck className="w-4 h-4" />, label: 'รถบรรทุก 10 ล้อ' },
-    { type: 'ไม่มีพาหนะ/เดินเท้า', icon: <User className="w-4 h-4" />, label: 'ไม่มีพาหนะ / เดินเท้า' },
+  const WORK_TYPE_EMOJIS: Record<string, string> = {
+    'สำรวจหน้างาน / ดูพื้นที่': '🔍',
+    'Demo': '✨',
+    'ส่งมอบสินค้า / ส่งเครื่อง': '📦',
+    'Demo Return': '🔄',
+    'อื่นๆ (ระบุเอง)': '📝',
+    'งาน PM': '⚙️',
+    'ตรวจกรมวิทย์ (สอบเทียบรังสี)': '☢️',
+    'สอบเทียบเครื่องมือ': '🎯',
+    'งานซ่อม': '🛠️',
+    'ติดตั้ง': '🔌',
+    'Training (สอนการใช้งาน)': '🎓',
+  };
+
+  // Role options with emojis
+  const ROLE_OPTIONS: { role: ContactRole; emoji: string; label: string }[] = [
+    { role: 'ช่าง', emoji: '🔧', label: 'ช่าง / วิศวกร (Engineer)' },
+    { role: 'ผู้แทน', emoji: '💼', label: 'ผู้แทนขาย (Sales Rep)' },
+    { role: 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ', emoji: '🧑‍⚕️', label: 'Product Specialist' },
+    { role: 'เจ้าหน้าที่ส่งสินค้า', emoji: '📦', label: 'ส่งมอบสินค้า (Delivery)' },
+    { role: 'อื่นๆ', emoji: '👤', label: 'บุคคลทั่วไป / อื่นๆ' },
+  ];
+
+  // Common vehicle types with emojis
+  const VEHICLE_OPTIONS: { type: VehicleType; emoji: string; label: string }[] = [
+    { type: 'รถยนต์ส่วนบุคคล', emoji: '🚗', label: 'รถยนต์ส่วนบุคคล / กระบะ' },
+    { type: 'จักรยานยนต์', emoji: '🛵', label: 'จักรยานยนต์' },
+    { type: 'รถบรรทุก 4 ล้อ', emoji: '🚚', label: 'รถบรรทุก 4 ล้อ' },
+    { type: 'รถบรรทุก 6 ล้อ', emoji: '🚛', label: 'รถบรรทุก 6 ล้อ' },
+    { type: 'รถบรรทุก 10 ล้อ', emoji: '🚛', label: 'รถบรรทุก 10 ล้อ' },
+    { type: 'ไม่มีพาหนะ/เดินเท้า', emoji: '🚶', label: 'เดินเท้า / ไม่มีพาหนะ' },
   ];
 
   // Quick suggestions for companies
@@ -184,17 +215,99 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     'Olympus',
   ];
 
-  // Handle Equipment toggling
-  const handleToggleEquipment = (eqName: string) => {
-    setSelectedEquipments(prev =>
-      prev.includes(eqName) ? prev.filter(e => e !== eqName) : [...prev, eqName]
+  // Extract unique brands from equipmentList
+  const availableBrands = React.useMemo(() => {
+    const brandsSet = new Set<string>();
+    equipmentList.forEach(eq => {
+      if (eq.brand && eq.brand.trim()) {
+        eq.brand.split(/[,;/]+/).forEach(b => {
+          const trimmed = b.trim();
+          if (trimmed && trimmed.length > 1) {
+            brandsSet.add(trimmed);
+          }
+        });
+      }
+    });
+    return Array.from(brandsSet).sort((a, b) => a.localeCompare(b, 'en'));
+  }, [equipmentList]);
+
+  // Real-time dynamic equipment filtering matching Name, Brand, Thai Translation, and Category
+  const filteredEquipmentList = React.useMemo(() => {
+    const term = equipmentSearch.toLowerCase().trim();
+    return equipmentList.filter(eq => {
+      // Brand filter
+      if (equipmentBrandFilter !== 'all') {
+        const brandLower = (eq.brand || '').toLowerCase();
+        if (!brandLower.includes(equipmentBrandFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // Keyword search
+      if (!term) return true;
+
+      const nameMatch = eq.name.toLowerCase().includes(term);
+      const nameThMatch = (eq.nameTh || '').toLowerCase().includes(term);
+      const brandMatch = (eq.brand || '').toLowerCase().includes(term);
+      const catMatch = (eq.category || '').toLowerCase().includes(term);
+
+      return nameMatch || nameThMatch || brandMatch || catMatch;
+    });
+  }, [equipmentList, equipmentSearch, equipmentBrandFilter]);
+
+  // Helper to format an equipment string with Brand
+  const formatEquipmentWithBrand = (eq: EquipmentInfo): string => {
+    const brandStr = eq.brand ? ` [Brand: ${eq.brand}]` : '';
+    return `${eq.name}${brandStr}`;
+  };
+
+  // Check if an equipment is currently selected
+  const isEquipmentSelected = (eq: EquipmentInfo): boolean => {
+    const fullTag = formatEquipmentWithBrand(eq);
+    return (
+      selectedEquipments.includes(fullTag) ||
+      selectedEquipments.includes(eq.name) ||
+      selectedEquipments.some(s => s.startsWith(eq.name))
     );
   };
 
+  // Toggle Equipment selection
+  const handleToggleEquipment = (eq: EquipmentInfo) => {
+    const fullTag = formatEquipmentWithBrand(eq);
+    setSelectedEquipments(prev => {
+      const alreadySelected = isEquipmentSelected(eq);
+      if (alreadySelected) {
+        return prev.filter(
+          item =>
+            item !== fullTag &&
+            item !== eq.name &&
+            !item.startsWith(eq.name)
+        );
+      } else {
+        return [...prev, fullTag];
+      }
+    });
+  };
+
+  // Remove specific selected equipment
+  const handleRemoveSelectedEquipment = (itemToRemove: string) => {
+    setSelectedEquipments(prev => prev.filter(e => e !== itemToRemove));
+  };
+
+  // Add custom equipment with Brand
   const handleAddCustomEquipment = () => {
-    if (customEquipment.trim() && !selectedEquipments.includes(customEquipment.trim())) {
-      setSelectedEquipments(prev => [...prev, customEquipment.trim()]);
+    const cleanName = customEquipment.trim();
+    const cleanBrand = customEquipmentBrand.trim();
+    if (!cleanName) return;
+
+    const formatted = cleanBrand
+      ? `${cleanName} [Brand: ${cleanBrand}]`
+      : cleanName;
+
+    if (!selectedEquipments.includes(formatted)) {
+      setSelectedEquipments(prev => [...prev, formatted]);
       setCustomEquipment('');
+      setCustomEquipmentBrand('');
     }
   };
 
@@ -334,6 +447,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       phone: cleanPhoneNumber(phone.trim()),
       department: department,
       workType: actualWorkType,
+      workDetails: workDetails.trim() || undefined,
       visitorCount: Number(visitorCount) || 1,
       cardImageUrl: cardImage,
       vehicleType: vehicleType,
@@ -359,10 +473,28 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       });
     } catch {}
 
-    // 2. Parallel Background Sync (Telegram + Google Sheets)
+    // 2. Parallel Background Sync (LINE Flex Card + Telegram + Google Sheets)
     const backgroundTasks: Promise<any>[] = [];
 
-    // Task A: Google Sheets Webhook (Visitor_Logs)
+    // Task A: LINE Messaging API Flex Message Card
+    if (sendLine) {
+      backgroundTasks.push(
+        sendLineFlexNotification(savedRecord).then(res => {
+          if (res.success) {
+            setLineStatus('✅ ส่งการ์ดแจ้งเตือน Flex Card เข้า LINE สำเร็จ');
+          } else {
+            setLineStatus(`⚠️ LINE แจ้งเตือนไม่สำเร็จ: ${res.message || ''}`);
+          }
+          return res;
+        }).catch(err => {
+          setLineStatus(`⚠️ เกิดข้อผิดพลาดส่ง LINE: ${err.message}`);
+        })
+      );
+    } else {
+      setLineStatus(null);
+    }
+
+    // Task B: Google Sheets Webhook (Visitor_Logs)
     backgroundTasks.push(
       GoogleSheetsService.sendRecordToGoogleSheet(savedRecord).catch(err => {
         console.warn('Google Sheets background sync notice:', err);
@@ -370,7 +502,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
       })
     );
 
-    // Task B: Telegram Notification (with photo)
+    // Task C: Telegram Notification (with photo)
     if (sendTelegram) {
       const telegramMessage = formatVisitorTelegramMessage(savedRecord);
       backgroundTasks.push(
@@ -390,7 +522,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
         })
       );
     } else {
-      setTelegramStatus('✅ บันทึกข้อมูลเรียบร้อยแล้ว');
+      setTelegramStatus(null);
     }
 
     // Execute in parallel without blocking user interaction
@@ -407,9 +539,11 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
     setCardImage('');
     setLicensePlate('');
     setNotes('');
+    setWorkDetails('');
     setCustomWorkType('');
     setSubmittedRecord(null);
     setTelegramStatus(null);
+    setLineStatus(null);
     setFormErrors({});
     setSubmitAttempted(false);
   };
@@ -429,12 +563,25 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
               ระบบได้บันทึกประวัติการเข้าปฏิบัติงานและอัปเดตสมุดติดต่อคู่ค้าเรียบร้อยแล้ว
             </p>
-            {telegramStatus && (
-              <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
-                <Send className="w-3.5 h-3.5 text-blue-600" />
-                <span>{telegramStatus}</span>
-              </div>
-            )}
+            
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {lineStatus && (
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  lineStatus.startsWith('✅') ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  <span>💬</span>
+                  <span>{lineStatus}</span>
+                </div>
+              )}
+              {telegramStatus && (
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  telegramStatus.startsWith('✅') ? 'bg-blue-50 text-blue-800 border border-blue-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  <Send className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{telegramStatus}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Visitor Pass Summary Card */}
@@ -478,6 +625,14 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 <span className="text-slate-500 block font-medium">เบอร์โทรติดต่อ:</span>
                 <span className="font-bold font-mono text-slate-900">{submittedRecord.phone}</span>
               </div>
+              {submittedRecord.workDetails && (
+                <div className="col-span-1 sm:col-span-2 pt-1">
+                  <span className="text-slate-500 block font-medium">รายละเอียดงาน:</span>
+                  <span className="font-semibold text-slate-800 text-[11px] block mt-0.5 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                    {submittedRecord.workDetails}
+                  </span>
+                </div>
+              )}
               {submittedRecord.equipmentHandled && submittedRecord.equipmentHandled.length > 0 && (
                 <div className="col-span-1 sm:col-span-2 pt-1">
                   <span className="text-slate-500 block mb-1 font-medium">เครื่องมือแพทย์ที่ดูแล:</span>
@@ -525,33 +680,34 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
   }
 
   return (
-    <div id="checkin-form-container" className="max-w-4xl mx-auto py-6 px-4 sm:px-6">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-slate-900 to-blue-950 rounded-2xl p-6 sm:p-7 text-white shadow-sm border border-slate-800 mb-6 relative overflow-hidden">
+    <div id="checkin-form-container" className="max-w-3xl mx-auto py-5 px-3.5 sm:px-6">
+      {/* Header Banner - Modern, Friendly & Balanced */}
+      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-600 rounded-2xl p-5 sm:p-6 text-white shadow-sm mb-5 relative overflow-hidden">
         <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-200 text-[11px] font-bold mb-2.5 border border-blue-400/30 uppercase tracking-wide">
-            <Sparkles className="w-3 h-3 text-blue-300" />
-            <span>Visitor BME</span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 backdrop-blur-xs text-white text-[11px] font-semibold mb-2 border border-white/20">
+            <span>👋 ยินดีต้อนรับ</span>
+            <span>•</span>
+            <span>BME Visitor Hub</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-            ลงทะเบียนผู้มาติดต่อ & ช่างเครื่องมือแพทย์
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            <span>🏥</span>
+            <span>ลงทะเบียนผู้มาติดต่อ & ช่างเครื่องมือแพทย์</span>
           </h1>
-          <p className="text-slate-300 text-xs sm:text-sm mt-1.5 leading-relaxed">
-            บุคคลทั่วไปและตัวแทนบริษัทสามารถบันทึกข้อมูลเข้าพบได้ทันที (ไม่ต้องใช้บัญชี Google)
-            พร้อมระบบแจ้งเตือนไปยังกลุ่มงาน BME ผ่าน Telegram แบบเรียลไทม์
+          <p className="text-blue-100/90 text-xs mt-1 leading-relaxed">
+            บุคคลทั่วไปและตัวแทนบริษัทสามารถบันทึกข้อมูลเข้าพบได้ทันที พร้อมแจ้งเตือนเข้า Telegram กลุ่มงาน BME อัตโนมัติ
           </p>
         </div>
-        {/* Subtle decorative grid/overlay */}
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-blue-600/10 transform skew-x-12 pointer-events-none"></div>
+        {/* Subtle decorative circles */}
+        <div className="absolute -right-8 -bottom-8 w-36 h-36 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
       </div>
 
       {/* Main Registration Card */}
-      <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200">
+      <div className="bg-white rounded-2xl p-5 sm:p-7 shadow-xs border border-slate-200/80">
         {submitAttempted && Object.keys(formErrors).length > 0 && (
-          <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-bold text-rose-900">กรุณากรอกข้อมูลให้ครบทุกช่องก่อนกดบันทึก:</p>
+          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-bold text-rose-900">กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน:</p>
               <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-700">
                 {Object.values(formErrors).map((err, idx) => (
                   <li key={idx}>{err}</li>
@@ -561,22 +717,22 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
 
           {/* Section 1: Personal & Company Info */}
-          <div>
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+          <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-200/70">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-1 border-b border-slate-200/60">
+              <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>👤</span>
                 <span>1. ข้อมูลผู้มาติดต่อ & บริษัท</span>
               </h3>
-              <span className="text-[11px] font-semibold text-slate-400">Visitor Info</span>
+              <span className="text-[10px] font-semibold text-slate-400">Visitor & Company</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {/* Name */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   ชื่อ - นามสกุล <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
@@ -590,13 +746,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       if (formErrors.name) setFormErrors({ ...formErrors, name: '' });
                     }}
                     placeholder="เช่น สมศักดิ์ ใจดี"
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                    className={`w-full pl-8 pr-3 py-2 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
                       formErrors.name
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
                         : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
                     }`}
                   />
-                  <User className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.name ? 'text-rose-500' : 'text-slate-400'}`} />
+                  <span className="absolute left-2.5 top-2 text-xs">👤</span>
                 </div>
                 {formErrors.name && (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
@@ -607,7 +763,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
               {/* Phone */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   เบอร์โทรศัพท์ติดต่อ <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
@@ -621,13 +777,13 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       if (formErrors.phone) setFormErrors({ ...formErrors, phone: '' });
                     }}
                     placeholder="เช่น 081-234-5678"
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                    className={`w-full pl-8 pr-3 py-2 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
                       formErrors.phone
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
                         : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
                     }`}
                   />
-                  <Phone className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.phone ? 'text-rose-500' : 'text-slate-400'}`} />
+                  <span className="absolute left-2.5 top-2 text-xs">📞</span>
                 </div>
                 {formErrors.phone && (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
@@ -638,12 +794,12 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
               {/* Company */}
               <div className="relative" ref={companyDropdownRef}>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-semibold text-slate-700">
                     บริษัท / สังกัด <span className="text-rose-500">*</span>
                   </label>
-                  <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                    รายชื่อบริษัทคู่สัญญา
+                  <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200/60">
+                    🏢 คู่สัญญา
                   </span>
                 </div>
 
@@ -664,20 +820,20 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       if (formErrors.company) setFormErrors({ ...formErrors, company: '' });
                     }}
                     placeholder="พิมพ์ค้นหา หรือเลือกจากรายชื่อบริษัท..."
-                    className={`w-full pl-9 pr-8 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                    className={`w-full pl-8 pr-7 py-2 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
                       formErrors.company
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
                         : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
                     }`}
                   />
-                  <Building2 className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.company ? 'text-rose-500' : 'text-slate-400'}`} />
+                  <span className="absolute left-2.5 top-2 text-xs">🏢</span>
                   <button
                     type="button"
                     onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
                     title="เปิด/ปิด รายชื่อบริษัท"
                   >
-                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCompanyDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isCompanyDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
                   </button>
                 </div>
                 {formErrors.company && (
@@ -690,14 +846,10 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 {isCompanyDropdownOpen && (
                   <div
                     id="company-dropdown-menu"
-                    className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150"
+                    className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in duration-100"
                   >
-                    {/* Header in dropdown */}
-                    <div className="p-2.5 bg-slate-50 sticky top-0 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-semibold z-10">
-                      <div className="flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                        <span>รายชื่อบริษัทคู่สัญญา ({filteredCompanies.length}/{sheetCompanies.length})</span>
-                      </div>
+                    <div className="p-2 bg-slate-50 sticky top-0 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-semibold z-10">
+                      <span>🏢 รายชื่อบริษัทคู่สัญญา ({filteredCompanies.length})</span>
                     </div>
 
                     {filteredCompanies.length > 0 ? (
@@ -712,7 +864,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                               setCompanySearch(comp);
                               setIsCompanyDropdownOpen(false);
                             }}
-                            className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                            className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between transition-colors cursor-pointer ${
                               isSelected
                                 ? 'bg-blue-50 text-blue-700 font-semibold'
                                 : 'text-slate-700 hover:bg-slate-50'
@@ -724,12 +876,12 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                         );
                       })
                     ) : (
-                      <div className="p-3 text-center text-xs text-slate-500">
-                        <p>ไม่พบบริษัท "{companySearch}" ในระบบ</p>
+                      <div className="p-2.5 text-center text-xs text-slate-500">
+                        <p>ไม่พบ "{companySearch}"</p>
                         <button
                           type="button"
                           onClick={() => setIsCompanyDropdownOpen(false)}
-                          className="mt-1.5 text-[11px] text-blue-600 font-semibold hover:underline"
+                          className="mt-1 text-[11px] text-blue-600 font-semibold hover:underline"
                         >
                           ใช้ชื่อ "{companySearch}" นี้
                         </button>
@@ -738,10 +890,10 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                   </div>
                 )}
 
-                {/* Popular company tags */}
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[10px] text-slate-400 font-medium">เลือกด่วน:</span>
-                  {sheetCompanies.slice(0, 6).map((comp, idx) => (
+                {/* Quick company pills */}
+                <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                  <span className="text-[10px] text-slate-400 font-medium">แนะนำ:</span>
+                  {sheetCompanies.slice(0, 5).map((comp, idx) => (
                     <button
                       key={idx}
                       type="button"
@@ -750,7 +902,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                         setCompanySearch(comp);
                         setIsCompanyDropdownOpen(false);
                       }}
-                      className="text-[10px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded transition-colors cursor-pointer border border-slate-200/60"
+                      className="text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 rounded transition-colors cursor-pointer border border-slate-200/50"
                     >
                       {comp}
                     </button>
@@ -758,43 +910,49 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 </div>
               </div>
 
-              {/* Role */}
+              {/* Role Selection */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   ตำแหน่ง / บทบาทของผู้ติดต่อ
                 </label>
-                <select
-                  id="visitor-role-select"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as ContactRole)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs text-slate-900 bg-white"
-                >
-                  <option value="ช่าง">ช่าง / Service Engineer / วิศวกรบริการ</option>
-                  <option value="ผู้แทน">ผู้แทน / Sales Representative</option>
-                  <option value="สเปเชียลลิสต์/ผู้เชี่ยวชาญ">สเปเชียลลิสต์ / Product Specialist</option>
-                  <option value="เจ้าหน้าที่ส่งสินค้า">เจ้าหน้าที่ส่งมอบสินค้า / Delivery</option>
-                  <option value="อื่นๆ">อื่นๆ</option>
-                </select>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {ROLE_OPTIONS.map((opt) => {
+                    const isSelected = role === opt.role;
+                    return (
+                      <button
+                        key={opt.role}
+                        type="button"
+                        onClick={() => setRole(opt.role)}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-xs transition-all text-left cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="text-xs">{opt.emoji}</span>
+                        <span className="truncate text-[11px]">{opt.role}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
 
-          <hr className="border-slate-200" />
-
           {/* Section 2: Department & Purpose */}
-          <div>
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+          <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-200/70">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-1 border-b border-slate-200/60">
+              <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🏥</span>
                 <span>2. แผนกที่เข้าติดต่อ & ลักษณะงาน</span>
               </h3>
-              <span className="text-[11px] font-semibold text-slate-400">Department & Task</span>
+              <span className="text-[10px] font-semibold text-slate-400">Department & Scope</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {/* Department */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   แผนกที่เข้ามาติดต่อ <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
@@ -806,7 +964,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       setDepartment(e.target.value);
                       if (formErrors.department) setFormErrors({ ...formErrors, department: '' });
                     }}
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                    className={`w-full pl-8 pr-3 py-2 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
                       formErrors.department
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
                         : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
@@ -818,7 +976,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       </option>
                     ))}
                   </select>
-                  <Layers className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.department ? 'text-rose-500' : 'text-slate-400'}`} />
+                  <span className="absolute left-2.5 top-2 text-xs">🏥</span>
                 </div>
                 {formErrors.department && (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
@@ -827,33 +985,71 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 )}
               </div>
 
-              {/* Work Type */}
+              {/* Visitor Count */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  ลักษณะงานที่เข้ามาปฏิบัติงาน <span className="text-rose-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  จำนวนผู้มาติดต่อ (คน) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <select
-                    id="visitor-worktype-select"
+                  <input
+                    id="visitor-count-input"
+                    type="number"
+                    min="1"
+                    max="50"
                     required
-                    value={workType}
+                    value={visitorCount}
                     onChange={(e) => {
-                      setWorkType(e.target.value);
-                      if (formErrors.workType) setFormErrors({ ...formErrors, workType: '' });
+                      setVisitorCount(Math.max(1, parseInt(e.target.value) || 1));
+                      if (formErrors.visitorCount) setFormErrors({ ...formErrors, visitorCount: '' });
                     }}
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
-                      formErrors.workType
+                    className={`w-full pl-8 pr-3 py-2 rounded-lg border text-xs text-slate-900 bg-white transition-all ${
+                      formErrors.visitorCount
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
                         : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
                     }`}
-                  >
-                    {WORK_TYPES.map((wt, i) => (
-                      <option key={i} value={wt}>
-                        {wt}
-                      </option>
-                    ))}
-                  </select>
-                  <Wrench className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.workType ? 'text-rose-500' : 'text-slate-400'}`} />
+                  />
+                  <span className="absolute left-2.5 top-2 text-xs">👥</span>
+                </div>
+                {formErrors.visitorCount && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.visitorCount}
+                  </p>
+                )}
+              </div>
+
+              {/* Work Type Selection */}
+              <div className="col-span-1 md:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    ลักษณะงานที่เข้ามาปฏิบัติงาน <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500">เลือกด่วนจากปุ่ม หรือ Dropdown</span>
+                </div>
+
+                {/* Quick Work Type Pills */}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {WORK_TYPES.map((wt) => {
+                    const isSelected = workType === wt;
+                    const emoji = WORK_TYPE_EMOJIS[wt] || '🛠️';
+                    return (
+                      <button
+                        key={wt}
+                        type="button"
+                        onClick={() => {
+                          setWorkType(wt);
+                          if (formErrors.workType) setFormErrors({ ...formErrors, workType: '' });
+                        }}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-200/90 hover:bg-blue-50/50 hover:border-blue-200'
+                        }`}
+                      >
+                        <span>{emoji}</span>
+                        <span className="text-[11px]">{wt}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {workType === 'อื่นๆ (ระบุเอง)' && (
@@ -866,7 +1062,7 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       if (formErrors.workType) setFormErrors({ ...formErrors, workType: '' });
                     }}
                     placeholder="ระบุลักษณะงานเพิ่มเติม..."
-                    className="w-full mt-2 px-3.5 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs"
+                    className="w-full mt-1.5 px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs bg-white"
                   />
                 )}
                 {formErrors.workType && (
@@ -876,153 +1072,313 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                 )}
               </div>
 
-              {/* Visitor Count */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  จำนวนผู้มาติดต่อ (คน) <span className="text-rose-500">*</span>
+              {/* Work Details (รายละเอียดงาน) */}
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <span>🛠️</span>
+                  <span>รายละเอียดงาน (ระบุรายละเอียดที่เข้ามาดำเนินการ)</span>
                 </label>
-                <input
-                  id="visitor-count-input"
-                  type="number"
-                  min="1"
-                  max="50"
-                  required
-                  value={visitorCount}
-                  onChange={(e) => {
-                    setVisitorCount(Math.max(1, parseInt(e.target.value) || 1));
-                    if (formErrors.visitorCount) setFormErrors({ ...formErrors, visitorCount: '' });
-                  }}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-xs text-slate-900 transition-all ${
-                    formErrors.visitorCount
-                      ? 'border-rose-500 ring-2 ring-rose-500/20'
-                      : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
-                  }`}
+                <textarea
+                  id="visitor-work-details"
+                  rows={2}
+                  value={workDetails}
+                  onChange={(e) => setWorkDetails(e.target.value)}
+                  placeholder="เช่น เปลี่ยนชุดบอร์ดไฟ, ทำ PM รอบ 6 เดือน, ทดสอบค่ารังสี Calibrate, สอนการใช้งาน..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs resize-none bg-white"
                 />
-                {formErrors.visitorCount && (
-                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {formErrors.visitorCount}
+              </div>
+
+              {/* Equipment Multi-select with Search and Brand Support */}
+              <div className="col-span-1 md:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5">
+                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <span>🧰</span>
+                    <span>เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน</span>
+                    <span className="text-rose-500 font-bold">* (เลือกอย่างน้อย 1 รายการ)</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    (ดึงจากชีท Data_equpment รวม {equipmentList.length} รายการ)
+                  </span>
+                </div>
+
+                {/* Real-time Search Box & Brand Filter */}
+                <div className="space-y-2 mb-2.5">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={equipmentSearch}
+                      onChange={(e) => setEquipmentSearch(e.target.value)}
+                      placeholder="🔍 พิมพ์เพื่อค้นหาเครื่องมือแพทย์ หรือ ยี่ห้อ (เช่น CT, X-Ray, GE, Philips, อัลตราซาวด์, กล้อง, Draeger...)"
+                      className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-300 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all shadow-2xs"
+                    />
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    {equipmentSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setEquipmentSearch('')}
+                        className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                        title="ล้างคำค้นหา"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Brand Filter Pills */}
+                  {availableBrands.length > 0 && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                      <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap flex items-center gap-0.5">
+                        🏷️ ยี่ห้อ:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEquipmentBrandFilter('all')}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap cursor-pointer ${
+                          equipmentBrandFilter === 'all'
+                            ? 'bg-slate-800 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        ทั้งหมด ({equipmentList.length})
+                      </button>
+                      {availableBrands.slice(0, 10).map(brand => {
+                        const isBrandActive = equipmentBrandFilter.toLowerCase() === brand.toLowerCase();
+                        return (
+                          <button
+                            key={brand}
+                            type="button"
+                            onClick={() => setEquipmentBrandFilter(isBrandActive ? 'all' : brand)}
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap cursor-pointer ${
+                              isBrandActive
+                                ? 'bg-amber-600 text-white font-semibold shadow-2xs'
+                                : 'bg-amber-50 text-amber-900 border border-amber-200/70 hover:bg-amber-100'
+                            }`}
+                          >
+                            {brand}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Equipment List Grid / Box */}
+                <div className={`p-2.5 rounded-xl border transition-all ${
+                  formErrors.equipments
+                    ? 'bg-rose-50/40 border-rose-400 ring-2 ring-rose-500/20'
+                    : 'bg-slate-50/70 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2 px-1">
+                    <span>
+                      ผลการค้นหา: <strong className="text-slate-700">{filteredEquipmentList.length}</strong> รายการ
+                      {equipmentSearch && <span> (ตรงกับ "{equipmentSearch}")</span>}
+                    </span>
+                    {selectedEquipments.length > 0 && (
+                      <span className="text-blue-700 font-semibold">
+                        เลือกแล้ว {selectedEquipments.length} รายการ
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto pr-1">
+                    {filteredEquipmentList.length === 0 ? (
+                      <div className="w-full text-center py-4 px-2">
+                        <p className="text-xs text-slate-500 mb-2">
+                          ไม่พบเครื่องมือแพทย์ที่ตรงกับ <strong>"{equipmentSearch}"</strong>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomEquipment(equipmentSearch);
+                            setEquipmentSearch('');
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors cursor-pointer"
+                        >
+                          <span>+ นำ "{equipmentSearch}" ไปเพิ่มเป็นเครื่องมือระบุเอง</span>
+                        </button>
+                      </div>
+                    ) : (
+                      filteredEquipmentList.map((eq) => {
+                        const isSelected = isEquipmentSelected(eq);
+                        const displayNameTh = eq.nameTh || translateMedicalEquipmentToThai(eq.name, eq.category);
+                        return (
+                          <button
+                            key={eq.id || eq.name}
+                            type="button"
+                            onClick={() => {
+                              handleToggleEquipment(eq);
+                              if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
+                            }}
+                            className={`group text-xs px-2.5 py-1.5 rounded-lg border transition-all text-left flex flex-col gap-0.5 cursor-pointer max-w-full ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 font-medium shadow-2xs ring-2 ring-blue-400/30'
+                                : 'bg-white text-slate-700 border-slate-200/90 hover:bg-blue-50/50 hover:border-blue-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
+                                isSelected ? 'bg-white text-blue-700 font-bold' : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {isSelected ? '✓' : '+'}
+                              </span>
+                              <span className="text-[11px] font-bold tracking-tight">
+                                {eq.name}
+                              </span>
+                              {eq.brand && (
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold whitespace-nowrap ${
+                                  isSelected
+                                    ? 'bg-blue-800 text-amber-200 border border-blue-400/50'
+                                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                                }`}>
+                                  🏷️ {eq.brand}
+                                </span>
+                              )}
+                            </div>
+                            {displayNameTh && (
+                              <span className={`text-[10px] pl-5 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                                🇹🇭 {displayNameTh}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Selected Equipments Display Tag Cloud */}
+                {selectedEquipments.length > 0 && (
+                  <div className="mt-2.5 p-2 bg-blue-50/60 border border-blue-200/80 rounded-xl">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                        <span>✅</span>
+                        <span>รายการเครื่องมือแพทย์ที่เลือก ({selectedEquipments.length} รายการ):</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEquipments([])}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 hover:underline font-semibold"
+                      >
+                        ล้างทั้งหมด
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {selectedEquipments.map((eq, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 bg-white text-blue-900 border border-blue-300 rounded-lg font-semibold shadow-2xs"
+                        >
+                          <span>{eq}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSelectedEquipment(eq)}
+                            className="w-4 h-4 rounded-full bg-blue-100 hover:bg-rose-500 hover:text-white text-blue-700 flex items-center justify-center font-bold text-xs transition-colors cursor-pointer"
+                            title="ลบรายการนี้"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add Custom Equipment & Brand Input Form */}
+                <div className="mt-2.5 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
+                    <span>➕</span>
+                    <span>เพิ่มเครื่องมือแพทย์ระบุเอง (กรณีไม่มีในรายการ)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <div className="sm:col-span-6">
+                      <input
+                        type="text"
+                        value={customEquipment}
+                        onChange={(e) => setCustomEquipment(e.target.value)}
+                        placeholder="ชื่อเครื่องมือแพทย์ เช่น หัวตรวจอัลตราซาวด์, Defibrillator..."
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCustomEquipment();
+                            if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <input
+                        type="text"
+                        value={customEquipmentBrand}
+                        onChange={(e) => setCustomEquipmentBrand(e.target.value)}
+                        placeholder="ยี่ห้อ (Brand) เช่น GE, Philips, Mindray..."
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCustomEquipment();
+                            if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleAddCustomEquipment();
+                          if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
+                        }}
+                        className="w-full h-full py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>เพิ่ม</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {formErrors.equipments && (
+                  <p className="text-[11px] text-rose-600 mt-1.5 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {formErrors.equipments}
                   </p>
                 )}
               </div>
 
-              {/* Equipment Multi-select with Thai Name */}
+              {/* Additional Notes */}
               <div className="col-span-1 md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  เครื่องมือแพทย์ที่ดูแล / ปฏิบัติงาน <span className="text-rose-500">* (เลือกอย่างน้อย 1 รายการ)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  📝 หมายเหตุเพิ่มเติม (ถ้ามี)
                 </label>
-                <div className={`flex flex-wrap gap-1.5 mb-2 max-h-44 overflow-y-auto p-2.5 rounded-xl border transition-all ${
-                  formErrors.equipments
-                    ? 'bg-rose-50/50 border-rose-400 ring-2 ring-rose-500/20'
-                    : 'bg-slate-50 border-slate-200'
-                }`}>
-                  {equipmentList.slice(0, 20).map((eq) => {
-                    const isSelected = selectedEquipments.includes(eq.name);
-                    const displayNameTh = eq.nameTh || translateMedicalEquipmentToThai(eq.name, eq.category);
-                    return (
-                      <button
-                        key={eq.id}
-                        type="button"
-                        onClick={() => {
-                          handleToggleEquipment(eq.name);
-                          if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
-                        }}
-                        className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all text-left flex flex-col cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1 font-medium">
-                          <span>{isSelected ? '✓ ' : '+ '}</span>
-                          <span>{eq.name}</span>
-                        </div>
-                        {displayNameTh && (
-                          <span className={`text-[10px] font-normal ${isSelected ? 'text-blue-100' : 'text-emerald-700 font-medium'}`}>
-                            {displayNameTh}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Add Custom Equipment input */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={customEquipment}
-                    onChange={(e) => setCustomEquipment(e.target.value)}
-                    placeholder="พิมพ์ชื่อเครื่องมือเพิ่มเติม เช่น ชุดกล้อง GI, X-Ray, CathLab, OR Light..."
-                    className="flex-1 px-3.5 py-2 rounded-lg border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddCustomEquipment();
-                        if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleAddCustomEquipment();
-                      if (formErrors.equipments) setFormErrors({ ...formErrors, equipments: '' });
-                    }}
-                    className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    เพิ่มเครื่องมือ
-                  </button>
-                </div>
-
-                {formErrors.equipments && (
-                  <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {formErrors.equipments}
-                  </p>
-                )}
-
-                {selectedEquipments.length > 0 && (
-                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs font-semibold text-slate-600">เครื่องมือที่เลือก:</span>
-                    {selectedEquipments.map((eq, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-md font-medium"
-                      >
-                        <span>{eq}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleEquipment(eq)}
-                          className="text-blue-700 hover:text-rose-600 font-bold"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <input
+                  id="visitor-notes"
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="เช่น มาแทนช่างประจำ, โทรนัดหมายไว้ล่วงหน้า..."
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-xs bg-white"
+                />
               </div>
             </div>
           </div>
 
-          <hr className="border-slate-200" />
-
           {/* Section 3: Vehicle & License Plate */}
-          <div>
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+          <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-200/70">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-1 border-b border-slate-200/60">
+              <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🚗</span>
                 <span>3. ข้อมูลยานพาหนะ & ทะเบียน</span>
               </h3>
-              <span className="text-[11px] font-semibold text-slate-400">Vehicle Info</span>
+              <span className="text-[10px] font-semibold text-slate-400">Vehicle Info</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Vehicle Type Selection */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {/* Vehicle Type */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   ประเภทยานพาหนะ <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   {VEHICLE_OPTIONS.map((opt) => {
                     const isSelected = vehicleType === opt.type;
                     return (
@@ -1036,16 +1392,14 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                             setFormErrors({ ...formErrors, licensePlate: '' });
                           }
                         }}
-                        className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs font-medium transition-all text-left cursor-pointer ${
+                        className={`flex items-center gap-1.5 p-2 rounded-lg border text-xs font-medium transition-all text-left cursor-pointer ${
                           isSelected
-                            ? 'bg-blue-50 text-blue-900 border-blue-600 ring-2 ring-blue-500/20 font-bold'
-                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        <span className={isSelected ? 'text-blue-600' : 'text-slate-400'}>
-                          {opt.icon}
-                        </span>
-                        <span className="truncate">{opt.type}</span>
+                        <span>{opt.emoji}</span>
+                        <span className="truncate text-[11px]">{opt.label}</span>
                       </button>
                     );
                   })}
@@ -1059,8 +1413,8 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
 
               {/* License Plate Number */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  ระบุเลขทะเบียนยานพาหนะ {vehicleType !== 'ไม่มีพาหนะ/เดินเท้า' ? <span className="text-rose-500">*</span> : <span className="text-slate-400">(ถ้ามี)</span>}
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  เลขทะเบียนยานพาหนะ {vehicleType !== 'ไม่มีพาหนะ/เดินเท้า' ? <span className="text-rose-500">*</span> : <span className="text-slate-400">(ถ้ามี)</span>}
                 </label>
                 <div className="relative">
                   <input
@@ -1073,124 +1427,120 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
                       if (formErrors.licensePlate) setFormErrors({ ...formErrors, licensePlate: '' });
                     }}
                     placeholder={vehicleType === 'ไม่มีพาหนะ/เดินเท้า' ? 'ไม่มีพาหนะ' : 'เช่น 2ขต 5189, 1กข 1234 กทม'}
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-xs font-mono text-slate-900 bg-white transition-all ${
+                    className={`w-full pl-8 pr-3 py-2 rounded-lg border text-xs font-mono text-slate-900 bg-white transition-all ${
                       formErrors.licensePlate
                         ? 'border-rose-500 ring-2 ring-rose-500/20'
                         : 'border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
                     }`}
                   />
-                  <Car className={`w-4 h-4 absolute left-3 top-2.5 ${formErrors.licensePlate ? 'text-rose-500' : 'text-slate-400'}`} />
+                  <span className="absolute left-2.5 top-2 text-xs">🚗</span>
                 </div>
                 {formErrors.licensePlate ? (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" /> {formErrors.licensePlate}
                   </p>
                 ) : (
-                  <p className="text-[11px] text-slate-500 mt-1.5">
-                    บันทึกสำหรับฝ่ายรักษาความปลอดภัยและระเบียบการจราจรในพื้นที่โรงพยาบาล
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    สำหรับความปลอดภัยและการจัดระเบียบการจราจรใน รพ.
                   </p>
                 )}
               </div>
             </div>
           </div>
 
-          <hr className="border-slate-200" />
-
-          {/* Section 4: Card Image Attachment & 5-Day Purge Policy */}
-          <div>
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-4 pb-1 border-b border-slate-100">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+          {/* Section 4: Card Image Attachment */}
+          <div className="bg-slate-50/60 rounded-xl p-4 border border-slate-200/70">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-1 border-b border-slate-200/60">
+              <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🪪</span>
                 <span>4. แนบรูปบัตรที่แลกแล้ว <span className="text-rose-500">*</span></span>
               </h3>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                <Clock className="w-3.5 h-3.5 text-amber-600" />
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/70">
+                <Clock className="w-3 h-3 text-amber-600" />
                 <span>ลบอัตโนมัติ 5 วัน (PDPA)</span>
               </span>
             </div>
 
-            <div className={`rounded-xl p-4 border border-dashed transition-all ${
+            <div className={`rounded-xl p-3.5 border border-dashed transition-all ${
               formErrors.cardImage
                 ? 'bg-rose-50/60 border-rose-400 ring-2 ring-rose-500/20'
-                : 'bg-slate-50 border-slate-300'
+                : 'bg-white border-slate-300'
             }`}>
               {formErrors.cardImage && (
-                <div className="mb-3 p-2.5 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-xs font-semibold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <div className="mb-2.5 p-2 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-xs font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                   <span>{formErrors.cardImage}</span>
                 </div>
               )}
               {cardImage ? (
-                <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="flex flex-col sm:flex-row items-center gap-3">
                   <img
                     src={cardImage}
                     alt="Card Preview"
-                    className="w-36 h-28 object-cover rounded-lg border-2 border-blue-600 shadow-2xs"
+                    className="w-32 h-24 object-cover rounded-lg border-2 border-blue-600 shadow-2xs"
                   />
-                  <div className="space-y-2 text-center sm:text-left">
-                    <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>แนบรูปบัตรแลกเรียบร้อยแล้ว</span>
+                  <div className="space-y-1.5 text-center sm:text-left">
+                    <p className="text-xs font-bold text-slate-900 flex items-center gap-1 justify-center sm:justify-start">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>แนบรูปบัตรเรียบร้อยแล้ว</span>
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      รูปนี้จะถูกจัดเก็บชั่วคราวและลบออกจากระบบอัตโนมัติภายใน 5 วันตามนโยบาย PDPA
+                      ระบบจะจัดเก็บชั่วคราวและลบอัตโนมัติใน 5 วันตามนโยบาย PDPA
                     </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCardImage('')}
-                        className="text-xs px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-md font-semibold transition-colors cursor-pointer"
-                      >
-                        ลบรูป / ถ่ายใหม่
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCardImage('')}
+                      className="text-[11px] px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-md font-semibold transition-colors cursor-pointer"
+                    >
+                      ลบรูป / ถ่ายใหม่
+                    </button>
                   </div>
                 </div>
               ) : isCameraActive ? (
-                <div className="space-y-3 text-center">
+                <div className="space-y-2.5 text-center">
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
-                    className="w-full max-w-sm mx-auto h-56 object-cover rounded-xl bg-black shadow-inner"
+                    className="w-full max-w-xs mx-auto h-48 object-cover rounded-xl bg-black shadow-inner"
                   />
                   <canvas ref={canvasRef} className="hidden" />
                   <div className="flex justify-center gap-2">
                     <button
                       type="button"
                       onClick={capturePhoto}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      className="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5 shadow-xs cursor-pointer"
                     >
-                      <Camera className="w-4 h-4" />
+                      <Camera className="w-3.5 h-3.5" />
                       <span>ถ่ายรูปบัตร</span>
                     </button>
                     <button
                       type="button"
                       onClick={stopCamera}
-                      className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-300 cursor-pointer"
+                      className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-300 cursor-pointer"
                     >
                       ยกเลิก
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 py-4 text-center">
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 py-3 text-center">
                   <button
                     type="button"
                     onClick={startCamera}
-                    className="px-4 py-2.5 bg-white border border-slate-300 hover:border-blue-500 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
+                    className="px-3.5 py-2 bg-slate-50 border border-slate-300 hover:border-blue-500 hover:bg-blue-50/40 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
                   >
-                    <Camera className="w-4 h-4 text-blue-600" />
+                    <span>📷</span>
                     <span>ถ่ายรูปด้วยกล้อง</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2.5 bg-white border border-slate-300 hover:border-blue-500 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
+                    className="px-3.5 py-2 bg-slate-50 border border-slate-300 hover:border-blue-500 hover:bg-blue-50/40 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
                   >
-                    <Upload className="w-4 h-4 text-slate-600" />
-                    <span>อัปโหลดรูปไฟล์จากอุปกรณ์</span>
+                    <span>📁</span>
+                    <span>เลือกไฟล์รูปจากเครื่อง</span>
                   </button>
                   <input
                     ref={fileInputRef}
@@ -1204,42 +1554,88 @@ export const VisitorCheckInForm: React.FC<VisitorCheckInFormProps> = ({
             </div>
           </div>
 
-          {/* Section 5: Notification & Submission */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <input
-                id="telegram-toggle"
-                type="checkbox"
-                checked={sendTelegram}
-                onChange={(e) => setSendTelegram(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300"
-              />
-              <label htmlFor="telegram-toggle" className="text-xs font-semibold text-slate-800 cursor-pointer">
-                ส่งการแจ้งเตือนทันทีไปยัง Telegram Bot (Chat ID: -5275868334)
+          {/* Section 5: Instant Realtime Notifications */}
+          <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🔔</span>
+                <span>ระบบแจ้งเตือนอัตโนมัติแบบทันที (Instant Alerts)</span>
+              </span>
+              <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-200">
+                ⚡ Real-time Push
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              {/* LINE Messaging API Flex Card */}
+              <label
+                htmlFor="line-toggle"
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  sendLine
+                    ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-500'
+                }`}
+              >
+                <input
+                  id="line-toggle"
+                  type="checkbox"
+                  checked={sendLine}
+                  onChange={(e) => setSendLine(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                />
+                <div className="flex flex-col">
+                  <span className="font-bold flex items-center gap-1">
+                    <span>💬</span>
+                    <span>LINE Flex Card Alert</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700/80">ส่งการ์ดข้อมูลติดต่อเข้า LINE OA ทันที</span>
+                </div>
+              </label>
+
+              {/* Telegram Alert */}
+              <label
+                htmlFor="telegram-toggle"
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  sendTelegram
+                    ? 'bg-blue-50/80 border-blue-300 text-blue-950 shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-500'
+                }`}
+              >
+                <input
+                  id="telegram-toggle"
+                  type="checkbox"
+                  checked={sendTelegram}
+                  onChange={(e) => setSendTelegram(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300 cursor-pointer"
+                />
+                <div className="flex flex-col">
+                  <span className="font-bold flex items-center gap-1">
+                    <span>✈️</span>
+                    <span>Telegram Bot Alert</span>
+                  </span>
+                  <span className="text-[10px] text-blue-700/80">ส่งรูปบัตรและรายละเอียดเข้ากลุ่ม BME</span>
+                </div>
               </label>
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">
-              ⚡ แจ้งเตือนเข้ากลุ่ม BME อัตโนมัติ
-            </span>
           </div>
 
           {/* Submit Button */}
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               id="submit-visitor-checkin-btn"
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer"
+              className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-70 cursor-pointer active:scale-[0.99]"
             >
               {isSubmitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>กำลังบันทึกข้อมูล...</span>
+                  <span>กำลังบันทึกข้อมูลและส่งการ์ดแจ้งเตือน...</span>
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>บันทึกการเข้าติดต่อ & แจ้งเตือน Telegram</span>
+                  <span>🚀</span>
+                  <span>บันทึกการเข้าติดต่อ & ส่งการ์ดแจ้งเตือน LINE / Telegram ทันที</span>
                 </>
               )}
             </button>

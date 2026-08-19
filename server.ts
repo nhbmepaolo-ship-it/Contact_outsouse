@@ -85,6 +85,70 @@ function getPublicBaseUrl(req: express.Request): string {
   return `https://${host}`;
 }
 
+async function uploadPhotoToTelegramCDN(buffer: Buffer): Promise<string | null> {
+  try {
+    const botToken = (cachedSettings.telegramToken || DEFAULT_BOT_TOKEN || '').trim();
+    const chatId = (cachedSettings.telegramChatId || DEFAULT_CHAT_ID || '').trim();
+    if (!botToken || !chatId) return null;
+
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    formData.append('photo', new Blob([buffer], { type: 'image/jpeg' }), 'visitor_card.jpg');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+
+    const sendRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    const sendData = await sendRes.json();
+    if (!sendData.ok || !sendData.result?.photo) return null;
+
+    const photos = sendData.result.photo;
+    const largestPhoto = photos[photos.length - 1];
+    if (!largestPhoto?.file_id) return null;
+
+    const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${largestPhoto.file_id}`);
+    const fileData = await fileRes.json();
+
+    if (fileData.ok && fileData.result?.file_path) {
+      return `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+    }
+  } catch (err) {
+    console.warn('Telegram CDN upload failed or skipped:', err);
+  }
+  return null;
+}
+
+async function storeImageAndGetPublicUrlAsync(photoData: string | undefined, req: express.Request, idHint?: string): Promise<string | null> {
+  if (!photoData || typeof photoData !== 'string') return null;
+  const clean = photoData.trim();
+  if (!clean) return null;
+
+  if (clean.startsWith('https://') && !clean.includes('localhost') && !clean.includes('127.0.0.1') && !clean.includes('.run.app')) {
+    return clean;
+  }
+
+  if (clean.startsWith('data:image/')) {
+    try {
+      const match = clean.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        const base64Data = match[2];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const telegramUrl = await uploadPhotoToTelegramCDN(buffer);
+        if (telegramUrl) return telegramUrl;
+      }
+    } catch (e) {
+      console.warn('Failed to parse base64 image for Telegram CDN:', e);
+    }
+  }
+  return null;
+}
+
 function storeImageAndGetPublicUrl(photoData: string | undefined, req: express.Request, idHint?: string): string | null {
   if (!photoData || typeof photoData !== 'string') return null;
   const clean = photoData.trim();
@@ -459,13 +523,20 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
   const workDetails = record.workDetails || '';
   const notes = record.notes || '';
 
-  // Ensure image URL is valid HTTPS and public (LINE API strictly requires public https:// and rejects localhost)
-  let photoUrl = imageUrl || (record.cardImageUrl && typeof record.cardImageUrl === 'string' ? record.cardImageUrl : null);
+  // Ensure image URL is valid HTTPS and publicly fetchable without auth (LINE API strictly requires public https:// and rejects localhost / sandbox preview proxies)
+  let photoUrl = imageUrl !== undefined ? imageUrl : (record?.cardImageUrl && typeof record.cardImageUrl === 'string' ? record.cardImageUrl : null);
   if (photoUrl) {
     if (photoUrl.startsWith('http://')) {
       photoUrl = photoUrl.replace('http://', 'https://');
     }
-    if (!photoUrl.startsWith('https://') || photoUrl.includes('localhost') || photoUrl.includes('127.0.0.1') || photoUrl.includes('0.0.0.0')) {
+    if (
+      !photoUrl.startsWith('https://') ||
+      photoUrl.includes('localhost') ||
+      photoUrl.includes('127.0.0.1') ||
+      photoUrl.includes('0.0.0.0') ||
+      photoUrl.includes('.run.app') ||
+      photoUrl.includes('data:image/')
+    ) {
       photoUrl = null;
     }
   }
@@ -654,6 +725,14 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
               type: 'box',
               layout: 'horizontal',
               contents: [
+                { type: 'text', text: '📸 รูปถ่ายบัตร/เอกสาร:', size: 'xs', color: '#64748B', flex: 4 },
+                { type: 'text', text: (record.cardImageUrl || record.cardImage) ? '📷 ถ่ายและบันทึกในระบบเรียบร้อย' : 'ไม่ได้แนบรูปถ่าย', size: 'xs', color: (record.cardImageUrl || record.cardImage) ? '#059669' : '#64748B', weight: 'bold', flex: 5 }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
                 { type: 'text', text: '⏰ เวลาที่บันทึก:', size: 'xs', color: '#64748B', flex: 4 },
                 { type: 'text', text: timestamp, size: 'xxs', color: '#64748B', flex: 5 }
               ]
@@ -687,7 +766,7 @@ function createVisitorFlexMessage(record: any, altText?: string, imageUrl?: stri
     };
   }
 
-  // Attach hero image if a valid https URL is available
+  // Attach hero image if a valid https URL (such as Telegram CDN) is available
   if (photoUrl) {
     flexBubble.hero = {
       type: 'image',
@@ -732,10 +811,10 @@ app.post('/api/line/notify', async (req, res) => {
       });
     }
 
-    // Process attached image if present
+    // Process attached image if present (asynchronously upload to public host for LINE display)
     const rawImage = cardImage || photo || record?.cardImage || record?.cardImageUrl;
     const recordId = record?.id || `rec_${Date.now()}`;
-    const hostedImageUrl = storeImageAndGetPublicUrl(rawImage, req, recordId);
+    const hostedImageUrl = await storeImageAndGetPublicUrlAsync(rawImage, req, recordId);
 
     let payloadMessages: any[] = [];
 

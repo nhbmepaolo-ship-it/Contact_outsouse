@@ -62,6 +62,10 @@ export function formatVisitorTelegramMessage(record: VisitorRecord): string {
     ? record.equipmentHandled.join(', ')
     : '-';
 
+  const workDetailsSection = record.workDetails
+    ? `\n🛠️ <b>รายละเอียดงาน:</b> ${escapeHtml(record.workDetails)}`
+    : '';
+
   const notesSection = record.notes
     ? `\n📝 <b>โน้ต:</b> ${escapeHtml(record.notes)}`
     : '';
@@ -75,7 +79,7 @@ export function formatVisitorTelegramMessage(record: VisitorRecord): string {
 🧰 <b>เครื่อง:</b> ${escapeHtml(equipmentsStr)}
 🚗 <b>พาหนะ:</b> ${vehicleStr}
 👥 <b>จำนวน:</b> ${record.visitorCount} ท่าน
-🕒 <b>เวลา:</b> <code>${escapeHtml(record.timestamp || new Date().toLocaleString('th-TH'))}</code>${notesSection}
+🕒 <b>เวลา:</b> <code>${escapeHtml(record.timestamp || new Date().toLocaleString('th-TH'))}</code>${workDetailsSection}${notesSection}
 ━━━━━━━━━━━━━━━`;
 }
 

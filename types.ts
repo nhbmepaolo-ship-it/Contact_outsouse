@@ -23,11 +23,13 @@ export interface VisitorRecord {
   department: string;
   workType: string;
   visitorCount: number;
+  cardImage?: string;
   cardImageUrl?: string;
   vehicleType: VehicleType;
   licensePlate: string;
   equipmentHandled: string[];
   contactRole?: ContactRole;
+  workDetails?: string;
   notes?: string;
   createdDate: string; // ISO string or timestamp
   isImageExpired?: boolean;
@@ -72,6 +74,15 @@ export interface TelegramConfig {
   enabled: boolean;
   notifyOnNewVisitor: boolean;
   notifyOnUrgentRepair: boolean;
+  lastTestStatus?: 'success' | 'error' | null;
+  lastTestMessage?: string;
+}
+
+export interface LineConfig {
+  channelAccessToken: string;
+  targetId: string; // User ID, Group ID, or Room ID (e.g. U55b79f4dd628aa9845a60deba9672717)
+  enabled: boolean;
+  notifyOnNewVisitor: boolean;
   lastTestStatus?: 'success' | 'error' | null;
   lastTestMessage?: string;
 }

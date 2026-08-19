@@ -27,9 +27,10 @@ import {
   Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { TelegramConfig, DepartmentInfo, EquipmentInfo, VisitorRecord } from '../types';
+import { TelegramConfig, LineConfig, DepartmentInfo, EquipmentInfo, VisitorRecord } from '../types';
 import { StorageService } from '../services/storageService';
 import { testTelegramConnection } from '../services/telegramService';
+import { testLineFlexNotification, buildVisitorLineFlexMessage } from '../services/lineNotifyService';
 import { applyImageRetentionPolicy } from '../utils/imageRetention';
 import { GoogleSheetsService, APPS_SCRIPT_TEMPLATE, DEFAULT_SHEET_WEBHOOK_URL, DEFAULT_SHEET_ID } from '../services/googleSheetsService';
 
@@ -57,6 +58,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // LINE Messaging API Settings State
+  const [lineConfig, setLineConfig] = useState<LineConfig>(() =>
+    StorageService.getLineConfig()
+  );
+  const [isTestingLine, setIsTestingLine] = useState(false);
+  const [lineTestResult, setLineTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // Google Sheet State
   const [sheetId, setSheetId] = useState(() => GoogleSheetsService.getSheetId());
   const [webhookUrl, setWebhookUrl] = useState(() => GoogleSheetsService.getWebhookUrl());
@@ -81,6 +89,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setWebhookUrl(currentUrl);
       setTempWebhookUrl(currentUrl);
       setSheetId(GoogleSheetsService.getSheetId());
+      setLineConfig(StorageService.getLineConfig());
     });
   }, []);
 
@@ -88,7 +97,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
   // Active sub-tab
-  const [activeSubTab, setActiveSubTab] = useState<'telegram' | 'sheets' | 'retention' | 'master'>('telegram');
+  const [activeSubTab, setActiveSubTab] = useState<'line' | 'telegram' | 'sheets' | 'retention' | 'master'>('line');
+
+  // Handle LINE Test
+  const handleTestLine = async () => {
+    setIsTestingLine(true);
+    setLineTestResult(null);
+
+    const result = await testLineFlexNotification(lineConfig.channelAccessToken, lineConfig.targetId);
+    setLineTestResult(result);
+    setIsTestingLine(false);
+
+    if (result.success) {
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+    }
+  };
+
+  // Save LINE Settings
+  const handleSaveLine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    StorageService.saveLineConfig(lineConfig);
+    
+    // Also sync to server settings
+    try {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lineToken: lineConfig.channelAccessToken,
+          lineTargetId: lineConfig.targetId
+        })
+      });
+    } catch {}
+
+    alert('บันทึกการตั้งค่า LINE Messaging API เรียบร้อยแล้ว');
+  };
 
   // New Department, Company & Equipment inline state
   const [newDeptName, setNewDeptName] = useState('');
@@ -419,8 +464,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Sub-tab switcher */}
       <div className="flex gap-1.5 p-1.5 bg-slate-200/60 rounded-xl overflow-x-auto border border-slate-200 text-xs font-semibold">
         <button
+          onClick={() => setActiveSubTab('line')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+            activeSubTab === 'line' ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>💬</span>
+          <span>การแจ้งเตือน LINE Flex Card</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('telegram')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
             activeSubTab === 'telegram' ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -430,8 +485,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('sheets')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer ${
-            activeSubTab === 'sheets' ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+            activeSubTab === 'sheets' ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
@@ -440,8 +495,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('retention')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer ${
-            activeSubTab === 'retention' ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+            activeSubTab === 'retention' ? 'bg-white text-amber-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -450,14 +505,257 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('master')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer ${
-            activeSubTab === 'master' ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+            activeSubTab === 'master' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Database className="w-3.5 h-3.5 text-indigo-600" />
           <span>ฐานข้อมูลแผนก & เครื่องมือ</span>
         </button>
       </div>
+
+      {/* Sub-tab 0: LINE Messaging API Settings & Flex Card Preview */}
+      {activeSubTab === 'line' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl p-6 sm:p-7 shadow-sm border border-slate-200 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center text-xl">
+                  💬
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-slate-900 text-base tracking-tight">
+                      ตั้งค่าระบบแจ้งเตือน LINE Messaging API (Flex Message Card)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      LINE OFFICIAL ACCOUNT
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    แจ้งเตือนรูปแบบการ์ดอัตโนมัติ (Flex Bubble) เข้า LINE ทันทีเมื่อมีผู้มาติดต่อหรือช่างเครื่องมือแพทย์ลงทะเบียน
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 self-start sm:self-auto">
+                ⚡ Instant Push
+              </span>
+            </div>
+
+            <form onSubmit={handleSaveLine} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    LINE Channel Access Token (Long-lived)
+                  </label>
+                  <input
+                    id="line-channel-token-input"
+                    type="text"
+                    value={lineConfig.channelAccessToken}
+                    onChange={(e) => setLineConfig({ ...lineConfig, channelAccessToken: e.target.value })}
+                    placeholder="praRVZr/JOYtwRnvljhGtKyAWjoP0o/..."
+                    className="w-full px-3.5 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-none text-slate-900 transition-all"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    🔑 ดึงได้จาก <a href="https://developers.line.biz/console/" target="_blank" rel="noreferrer" className="text-blue-600 underline font-medium">LINE Developers Console</a> &gt; Messaging API &gt; Channel access token
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    LINE Target User ID (ส่งหาบุคคลคนเดียว 1-on-1)
+                  </label>
+                  <input
+                    id="line-target-id-input"
+                    type="text"
+                    value={lineConfig.targetId}
+                    onChange={(e) => setLineConfig({ ...lineConfig, targetId: e.target.value })}
+                    placeholder="U55b79f4dd628aa9845a60deba9672717"
+                    className="w-full px-3.5 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-none text-slate-900 transition-all"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    👤 <b>ส่งให้บุคคลคนเดียว (1-on-1):</b> ใช้ User ID ขึ้นต้นด้วย <code>U...</code> (เช่น <code>U55b79f4dd628aa9845a60deba9672717</code>) *ผู้รับต้องเพิ่มเพื่อนกับบอทก่อน
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <input
+                    id="enable-line-checkbox"
+                    type="checkbox"
+                    checked={lineConfig.enabled}
+                    onChange={(e) => setLineConfig({ ...lineConfig, enabled: e.target.checked })}
+                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-600 border-slate-300 cursor-pointer"
+                  />
+                  <label htmlFor="enable-line-checkbox" className="text-xs font-semibold text-slate-800 cursor-pointer">
+                    เปิดใช้งานการส่งแจ้งเตือน LINE Messaging API
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <input
+                    id="notify-new-visitor-checkbox"
+                    type="checkbox"
+                    checked={lineConfig.notifyOnNewVisitor}
+                    onChange={(e) => setLineConfig({ ...lineConfig, notifyOnNewVisitor: e.target.checked })}
+                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-600 border-slate-300 cursor-pointer"
+                  />
+                  <label htmlFor="notify-new-visitor-checkbox" className="text-xs font-semibold text-slate-800 cursor-pointer">
+                    ส่งการ์ดข้อมูลติดต่อทันทีหลังบันทึกแบบฟอร์ม
+                  </label>
+                </div>
+              </div>
+
+              {lineTestResult && (
+                <div
+                  className={`p-3.5 rounded-lg text-xs flex items-center gap-2 ${
+                    lineTestResult.success
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {lineTestResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{lineTestResult.message}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>บันทึกการตั้งค่า LINE</span>
+                </button>
+
+                <button
+                  id="test-line-btn"
+                  type="button"
+                  onClick={handleTestLine}
+                  disabled={isTestingLine}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
+                >
+                  {isTestingLine ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>กำลังส่งการ์ดทดสอบเข้า LINE...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>💬</span>
+                      <span>ทดสอบส่งการ์ดเข้า LINE (Test Flex Card)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Live Mobile Flex Card Mockup Preview */}
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <span>📱</span>
+                  <span>ตัวอย่างการแสดงผลการ์ดการติดต่อบนมือถือ (LINE Flex Card Mobile Preview)</span>
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  ดีไซน์การ์ดแบบทันสมัย กระชับ สบายตา สีสันคมชัด พร้อมปุ่มโทรออกได้ทันที
+                </p>
+              </div>
+              <span className="text-[10px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-full border border-slate-200">
+                Responsive Flex Container
+              </span>
+            </div>
+
+            <div className="max-w-sm mx-auto bg-slate-900 text-white rounded-2xl p-3 shadow-xl border border-slate-800">
+              {/* LINE Mockup Bubble */}
+              <div className="bg-slate-950 rounded-xl overflow-hidden shadow-inner border border-slate-800">
+                {/* Card Header */}
+                <div className="bg-[#0F172A] p-3.5 border-b border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-extrabold text-[#38BDF8] tracking-wide">
+                      🏥 BME VISITOR PASS
+                    </span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-700">
+                      🟢 เช็คอินเข้าพื้นที่
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">
+                    🔔 แจ้งเตือนผู้มาติดต่อแผนกวิศวกรรมการแพทย์ (BME)
+                  </h4>
+                  <p className="text-[9px] text-slate-400">
+                    โรงพยาบาลพญาไทพหลโยธิน
+                  </p>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-3 bg-[#F8FAFC] text-slate-900 space-y-2.5">
+                  {/* Visitor Info */}
+                  <div className="bg-white rounded-lg p-2.5 border border-slate-200 text-[11px] space-y-1 shadow-2xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">👤 ชื่อผู้ติดต่อ:</span>
+                      <span className="font-bold text-slate-900">นายสมชาย ช่างบริการ</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">🏢 บริษัท/สังกัด:</span>
+                      <span className="font-bold text-blue-600">บริษัท เมดิคอล เซอร์วิส จำกัด</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">🏷️ บทบาท:</span>
+                      <span className="text-slate-700 font-medium">ช่างซ่อมบำรุง / Service</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">📞 เบอร์ติดต่อ:</span>
+                      <span className="font-bold text-emerald-600">081-234-5678</span>
+                    </div>
+                  </div>
+
+                  {/* Work Details */}
+                  <div className="bg-white rounded-lg p-2.5 border border-slate-200 text-[11px] space-y-1 shadow-2xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">📍 แผนกที่เข้าพบ:</span>
+                      <span className="font-bold text-slate-900">ICU 1 / หออภิบาลผู้ป่วยหนัก</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">🛠️ ลักษณะงาน:</span>
+                      <span className="font-bold text-amber-600">ตรวจเช็คตามระยะ (PM)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">🧰 เครื่องมือแพทย์:</span>
+                      <span className="font-bold text-blue-600">Defibrillator [Brand: Zoll]</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">👥 จำนวนผู้เข้าพบ:</span>
+                      <span className="text-slate-700">1 ท่าน</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">🚗 ยานพาหนะ:</span>
+                      <span className="text-slate-700">รถยนต์ส่วนบุคคล (1กข-9999)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">⏰ เวลาที่บันทึก:</span>
+                      <span className="text-[10px] text-slate-400 font-mono">18/8/2569, 11:20:00</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Footer */}
+                <div className="p-2.5 bg-white border-t border-slate-100">
+                  <div className="w-full py-1.5 bg-[#06C755] text-white font-bold text-[11px] rounded-lg text-center shadow-xs flex items-center justify-center gap-1 cursor-pointer">
+                    <span>📞 โทรหาผู้ติดต่อ (081-234-5678)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sub-tab 1: Telegram Settings */}
       {activeSubTab === 'telegram' && (
