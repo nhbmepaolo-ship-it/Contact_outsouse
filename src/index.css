@@ -1,152 +1,26 @@
 @import "tailwindcss";
 
 @layer base {
-  *,
-  ::before,
-  ::after,
-  html,
-  body,
-  #root,
-  input,
-  textarea,
-  select,
-  button,
-  table {
-    font-family: 'Sarabun', 'TH Sarabun New', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  html {
+    font-size: 15px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    font-family: 'Prompt', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1e293b;
+    background-color: #f8fafc;
+    letter-spacing: 0.01em;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code, kbd, samp, pre {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  input, select, textarea, button {
+    font-family: inherit;
   }
 }
-
-body {
-  font-family: 'Sarabun', 'TH Sarabun New', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-@page {
-  size: A4 portrait;
-  margin: 0;
-}
-
-@media print {
-  .print-hidden-page {
-    display: none !important;
-  }
-
-  /* Hide all non-printable UI elements */
-  header,
-  nav,
-  button,
-  .print\:hidden,
-  .no-print,
-  .lg\:col-span-8,
-  [role="dialog"] {
-    display: none !important;
-  }
-
-  /* Reset body and layout container constraints for printing */
-  html,
-  body,
-  #root,
-  main,
-  .grid,
-  .lg\:col-span-4,
-  .sticky {
-    display: block !important;
-    position: static !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: none !important;
-    min-height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    background: #ffffff !important;
-    box-shadow: none !important;
-    overflow: visible !important;
-    transform: none !important;
-    scale: 1 !important;
-  }
-
-  .printable-paper {
-    display: block !important;
-    width: 210mm !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
-    background: #ffffff !important;
-  }
-
-  /* Exact A4 Page formatting matching preview */
-  .a4-page {
-    width: 210mm !important;
-    height: 297mm !important;
-    min-height: 297mm !important;
-    max-height: 297mm !important;
-    padding: 6mm 8mm !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    border: none !important;
-    page-break-before: always !important;
-    page-break-after: always !important;
-    break-before: page !important;
-    break-after: page !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    box-sizing: border-box !important;
-    background: #ffffff !important;
-    overflow: hidden !important;
-    position: relative !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: space-between !important;
-  }
-
-  .a4-page:first-child {
-    page-break-before: avoid !important;
-    break-before: avoid !important;
-  }
-
-  .a4-page:last-child {
-    page-break-after: avoid !important;
-    break-after: avoid !important;
-  }
-}
-
-/* Force absolute crisp black text and borders for printable paper & PDF preview */
-.printable-paper,
-.a4-page,
-.a4-page p,
-.a4-page span,
-.a4-page h1,
-.a4-page h2,
-.a4-page div,
-.a4-page label,
-.a4-page td,
-.a4-page th {
-  color: #000000 !important;
-}
-
-.printable-paper .border-slate-900,
-.a4-page .border-slate-900,
-.printable-paper .border-slate-800,
-.a4-page .border-slate-800,
-.printable-paper .border-slate-700,
-.a4-page .border-slate-700,
-.printable-paper .border-slate-500,
-.a4-page .border-slate-500,
-.printable-paper .border-slate-400,
-.a4-page .border-slate-400 {
-  border-color: #000000 !important;
-}
-
-/* Ensure section header banners maintain light gray background and black text */
-.a4-page .section-header-banner,
-.a4-page .bg-\[\#e5e7eb\],
-.a4-page .bg-gray-200,
-.a4-page .bg-slate-200 {
-  background-color: #e5e7eb !important;
-  color: #000000 !important;
-}
-
-
-
-

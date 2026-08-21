@@ -1,6 +1,6 @@
 {
-  "name": "ระบบบันทึก CPI - โรงพยาบาลพญาไท",
-  "description": "ระบบบันทึกกิจกรรมพัฒนาผลสัมฤทธิ์ของงาน (CPI) ตามแบบฟอร์มโรงพยาบาลพญาไท พร้อม Auto-fill AI, เซ็นออนไลน์, Export PDF/Excel และส่งอีเมล",
-  "requestFramePermissions": [],
+  "name": "ระบบบันทึกและวิเคราะห์ผู้มาติดต่อเครื่องมือแพทย์",
+  "description": "ระบบบันทึกข้อมูลผู้มาติดต่อ ช่าง และผู้แทนบริษัทคู่ค้าเครื่องมือแพทย์ พร้อมแดชบอร์ดวิเคราะห์ข้อมูล ทะเบียนยานพาหนะ ลบรูปอัตโนมัติ 5 วัน สมุดติดต่อบริษัท และการแจ้งเตือน LINE Messaging API (Flex Card) & Telegram",
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
