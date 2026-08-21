@@ -1,104 +1,114 @@
-export type VehicleType =
-  | 'ไม่มีพาหนะ/เดินเท้า'
-  | 'จักรยานยนต์'
-  | 'รถยนต์ส่วนบุคคล'
-  | 'รถบรรทุก 4 ล้อ'
-  | 'รถบรรทุก 6 ล้อ'
-  | 'รถบรรทุก 10 ล้อ';
+export interface SourceTypes {
+  visionPolicy: boolean;
+  satisfactionSurvey: boolean;
+  riskReview: boolean;
+  staffSuggestion: boolean;
+  internalAudit: boolean;
+  internalAuditNo: string;
+  complaint: boolean;
+  complaintNo: string;
+  kpiUnmet: boolean;
+  other: boolean;
+  otherDetail: string;
+}
 
-export type ContactRole =
-  | 'ผู้แทน'
-  | 'ช่าง'
-  | 'สเปเชียลลิสต์/ผู้เชี่ยวชาญ'
-  | 'เจ้าหน้าที่ส่งสินค้า'
-  | 'วิศวกรบริการ'
-  | 'อื่นๆ';
+export interface BenefitsReceived {
+  increaseSatisfaction: boolean;
+  internalCommEfficiency: boolean;
+  reduceErrors: boolean;
+  staffSkill: boolean;
+  efficientResource: boolean;
+  staffSatisfaction: boolean;
+  reduceComplications: boolean;
+  treatmentOutcome: boolean;
+  increaseSpeed: boolean;
+  increaseSafety: boolean;
+  increaseValue: boolean;
+  costReduction: boolean;
+  costReductionAmount: string;
+  revenueIncrease: boolean;
+  revenueIncreaseAmount: string;
+  other: boolean;
+  otherDetail: string;
+  otherBenefit?: boolean;
+  otherBenefitDetail?: string;
+}
 
-export interface VisitorRecord {
+export interface Obstacles {
+  dataCollection: string;
+  kpiCollection: string;
+  findingSolutions: string;
+  other: string;
+}
+
+export interface ClosureOpinion {
+  closeApproved: boolean;
+  reliableData: boolean;
+  studyMore: boolean;
+  studyMoreDetail: string;
+  expandProcess: boolean;
+  other: boolean;
+  otherDetail: string;
+}
+
+export interface CPIFormData {
   id: string;
-  timestamp: string; // e.g. "25/2/2025, 16:40:51"
-  name: string;
-  company: string;
-  phone: string;
-  department: string;
-  workType: string;
-  visitorCount: number;
-  cardImage?: string;
-  cardImageUrl?: string;
-  vehicleType: VehicleType;
-  licensePlate: string;
-  equipmentHandled: string[];
-  contactRole?: ContactRole;
-  workDetails?: string;
-  notes?: string;
-  createdDate: string; // ISO string or timestamp
-  isImageExpired?: boolean;
-  imageExpireDate?: string;
+  docNo: string; // เลขที่โครงการ
+  docDate: string; // วัน/เดือน/ปี ขอดำเนินการ
+  department: string; // ฝ่าย/แผนก/หน่วยงาน
+  projectTitle: string; // ชื่อโครงการ
+  
+  // ประเภทโครงการ (เลือกได้)
+  projectType: ('IA' | 'PIP' | 'BIP')[];
+  
+  // ประเภทการพัฒนา (เลือกได้)
+  developmentType: ('clinical' | 'service_process' | 'mini_research')[];
+  
+  // ที่มาโครงการ
+  sourceTypes: SourceTypes;
+  
+  // ส่วนที่ 2: รายละเอียดโครงการ
+  problemStatement: string; // 1. สถานการณ์ปัญหา/โอกาสพัฒนา
+  goal: string; // 2. เป้าหมาย
+  kpiAndTarget: string; // 3. ตัวชี้วัด (KPI) และ target
+  improvementSteps: string; // 4. ขั้นตอนการปรับปรุง/เปลี่ยนแปลงกระบวนการ (Bullet)
+  startDate: string; // 5. วันที่เริ่มต้น
+  endDate: string; // 5. วันที่สิ้นสุดโครงการ
+  expectedBenefits: string; // 6. ประโยชน์ที่คาดว่าจะได้รับ
+  budget: string; // 7. งบประมาณ (ถ้ามี)
+  
+  // ลายเซ็นส่วนที่ 1
+  proposerSignature: string; // base64
+  proposerName: string;
+  proposerDate: string;
+  
+  deptHeadOpinion: 'approve' | 'disapprove' | null;
+  deptHeadSignature: string; // base64
+  deptHeadName: string;
+  deptHeadPosition: string;
+  deptHeadDate: string;
+  
+  // ส่วนที่ 3: รายงานผลการพัฒนาผลสัมฤทธิ์ของงาน (หน้า 2)
+  resultsKPI: string; // 1.1 ผลลัพธ์ KPI
+  resultsOther: string; // 1.2 ผลลัพธ์อื่นๆ
+  
+  benefitsReceived: BenefitsReceived;
+  obstacles: Obstacles;
+  recommendationsExpansion: string; // 4. ข้อเสนอแนะ / การขยายผลโครงการ
+  
+  // ลายเซ็นส่วนที่ 3
+  projectOwnerSignaturePage2: string; // base64
+  projectOwnerNamePage2: string;
+  projectOwnerDatePage2: string;
+  
+  closureOpinion: ClosureOpinion;
+  approverSignature: string; // base64
+  approverName: string;
+  approverDate: string;
+  
+  status: 'draft' | 'pending_approval' | 'approved_closed';
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface CompanyContact {
-  id: string;
-  companyName: string;
-  contactName: string;
-  role: ContactRole;
-  phone: string;
-  equipmentList: string[]; // Deduplicated list of all medical equipments managed
-  departmentsCovered: string[];
-  lastVisit?: string;
-  visitCount: number;
-  email?: string;
-  notes?: string;
-}
-
-export interface DepartmentInfo {
-  id: string;
-  name: string;
-  buildingFloor?: string;
-  category?: string;
-}
-
-export interface EquipmentInfo {
-  id: string;
-  code: string;
-  name: string;
-  nameTh?: string; // ชื่อภาษาไทยตามหลักสากลวิศวกรรมการแพทย์ (คอลัมน์ D Name_EqupmentTH)
-  brand?: string;
-  category: string;
-  department?: string;
-  vendorCompany?: string;
-}
-
-export interface TelegramConfig {
-  botToken: string;
-  chatId: string;
-  enabled: boolean;
-  notifyOnNewVisitor: boolean;
-  notifyOnUrgentRepair: boolean;
-  lastTestStatus?: 'success' | 'error' | null;
-  lastTestMessage?: string;
-}
-
-export interface LineConfig {
-  channelAccessToken: string;
-  targetId: string; // User ID, Group ID, or Room ID (e.g. U55b79f4dd628aa9845a60deba9672717)
-  enabled: boolean;
-  notifyOnNewVisitor: boolean;
-  lastTestStatus?: 'success' | 'error' | null;
-  lastTestMessage?: string;
-}
-
-export interface DashboardStats {
-  totalVisits: number;
-  todayVisits: number;
-  totalRepairs: number;
-  totalPM: number;
-  totalDemo: number;
-  totalTraining: number;
-  totalCompanies: number;
-  totalUniquePeople: number;
-  vehiclesCount: Record<string, number>;
-  topDepartments: { name: string; count: number }[];
-  topCompanies: { name: string; count: number }[];
-  workTypeBreakdown: { name: string; count: number; percentage: number }[];
-  monthlyTrends: { month: string; count: number }[];
-}
+export type AutoFillSection = 'all' | 'problem' | 'goal' | 'kpis' | 'steps' | 'benefits' | 'results' | 'obstacles';
